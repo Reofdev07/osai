@@ -1,0 +1,53 @@
+# Entorno virtual
+.venv/
+*.env
+.env.production
+.env.development
+.osai/
+
+
+# Archivos de compilación de Python
+__pycache__/
+*.py[cod]
+
+# Archivos de inicialización de Python
+**/__init__.py
+
+# Archivos de configuración de IDEs
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Archivos de distribución
+*.egg-info/
+dist/
+build/
+
+# Archivos de log
+*.log
+
+# Archivos de pruebas
+coverage.xml
+*.cover
+*.py,cover
+nosetests.xml
+*.test
+
+# Otros
+*.DS_Store
+*.egg
+*.egg-info
+*.pdb
+*.pkl
+
+# Archivos de caché
+.cache/
+
+# Configuración y caché de Alembic
+alembic/__pycache__/
+alembic/versions/__pycache__/
+alembic/versions/*.pyc
+alembic/versions/*.pyo
+alembic/versions/__init__.py
+alembic.ini

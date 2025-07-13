@@ -1,0 +1,65 @@
+# 🧠 Significado del nombre OSAI
+OSAI es el acrónimo de “Operating System for Artificial Intelligence”, o también puede interpretarse como un "Organizador Semántico Asistido por Inteligencia".
+Este nombre representa una plataforma versátil, capaz de orquestar agentes inteligentes que automatizan procesos complejos, empezando por la radicación documental, pero con posibilidad de escalar hacia flujos más amplios e integraciones más complejas.
+
+# 📄 Ficha Técnica / Descripción estilo RITM para el proyecto OSAI
+🔹 Nombre del Proyecto: OSAI
+🔹 Versión: 1.0 – Radicación Inteligente
+🔹 Objetivo del Proyecto:
+Desarrollar una plataforma base que permita la integración de agentes inteligentes en flujos administrativos, iniciando con la automatización del proceso de radicación de documentos dentro de un sistema de gestión documental, con enfoque inicial en el contexto de la administración pública colombiana.
+
+# 📄 Descripción del Proyecto
+OSAI será una API desarrollada en FastAPI, orientada a facilitar la interpretación y procesamiento inteligente de documentos entrantes. En su primera versión, OSAI se encargará de simular el proceso humano de radicación, aplicando herramientas de inteligencia artificial que permiten analizar automáticamente archivos (PDFs, imágenes, escaneos), extraer su contenido (usando OCR o extractores como Tika o PyMuPDF), clasificar el tipo de documento (factura, contrato, solicitud, etc.) y generar respuestas estructuradas que integren con sistemas existentes de gestión documental.
+
+# Alcance inicial – Versión 1.0:
+
+1-  Captura de datos clave (nombre, cargo, fecha de nacimiento, etc.)
+
+2-  Categorización del documento (tipo de documento, etc.)
+
+3-  Detección del tipo de archivo (imagen, PDF escaneado, PDF nativo).
+
+4-  Aplicación de herramienta adecuada de extracción:
+
+    *  OCR: Tesseract
+
+    *  PDF: PyMuPDF
+
+    *  Extractores como PyMuPDF o Tika para PDFs nativos.
+
+5-  Procesamiento del contenido extraído.
+
+6-  Clasificación del documento mediante modelos de IA (posiblemente con modelos entrenados o clasificación semántica básica).
+
+7-  Generación de metadatos estructurados listos para ser integrados en un flujo de radicación.
+
+Simulación del flujo humano de radicación: captura de datos clave, categorización, indexación y preparación para su ingreso al sistema.
+
+# Enfoque del Proyecto:
+
+Centrado inicialmente en entidades públicas colombianas.
+
+Busca alinear sus procesos a las normativas de radicación documental definidas por entidades como el Archivo General de la Nación.
+
+Modular y escalable para incluir en el futuro flujos adicionales como:
+
+    * Firma digital.
+
+    * Interpretación de comandos por voz.
+
+    * Orquestación de tareas documentales automáticas.
+
+    * Asistentes virtuales documentales.
+
+# Tecnologías Base:
+
+* FastAPI (backend/API)
+
+* Python (procesamiento, IA, OCR)
+
+* PyMuPDF / Tika / pytesseract
+
+* Clasificación con LLMs o modelos entrenados propios
+
+* Integración futura con bases vectoriales / embeddings
+
