@@ -3,7 +3,7 @@
 *.env
 .env.production
 .env.development
-.osai/
+osai_venv/
 
 
 # Archivos de compilación de Python
