@@ -8,18 +8,18 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # Configuración común
-    APP_NAME: str = "Osai"
-    DEBUG: bool = False
-    DATABASE_URL: str = ""
-    API_KEY_TOKEN: str
-    FASTAPI_ENV: str
+    # APP_NAME: str = "Osai"
+    # DEBUG: bool = False
+    # DATABASE_URL: str = ""
+    # API_KEY_TOKEN: str
+    # FASTAPI_ENV: str
 
     # Database variables
-    DB_HOST: str = "localhost"
-    DB_PORT: int = 3306
-    DB_DATABASE: str
-    DB_USERNAME: str = "root"
-    DB_PASSWORD: str = ""
+    # DB_HOST: str = "localhost"
+    # DB_PORT: int = 3306
+    # DB_DATABASE: str
+    # DB_USERNAME: str = "root"
+    # DB_PASSWORD: str = ""
 
     # AWS S3 Credentials
     # AWS_ACCESS_KEY_ID: str

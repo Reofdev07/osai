@@ -1,11 +1,13 @@
 from fastapi import APIRouter
 
+from .document_analyze.doc_analyze_router import doc_analyze_router
 
-base_router = APIRouter()
+base_router = APIRouter(
+    prefix="/api",
+)
 
 routers = [
-    # user_router,
-    #auth_router
+    doc_analyze_router,
 ]
 
 for router in routers:

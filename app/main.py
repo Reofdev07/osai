@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 from .core.config import settings
-# from .api.routers.base_router import base_router
+from .api.base_router import base_router
 # from .db.database import engine
 # from .db.database import Base
 # from .db.models import *
@@ -44,7 +44,7 @@ app.add_middleware(
 # # Crear las tablas en la base de datos
 # Base.metadata.create_all(bind=engine)
 
-# app.include_router(base_router)
+app.include_router(base_router)
 
 # Endpoint de información general
 @app.get("/info")
