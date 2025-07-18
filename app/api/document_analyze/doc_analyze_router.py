@@ -2,6 +2,9 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 
 from typing import List
 
+from ...utils.webhook_notifier import WebhookNotifier
+from ...utils.webhooks import call_webhook
+
 # Crear el router
 doc_analyze_router = APIRouter(
     prefix="/documents",
@@ -31,4 +34,19 @@ async def analyze_document(files: List[UploadFile] = File(...),):
     Returns:
         List[DocumentAnalysisResponse]: Lista con los resultados del análisis de cada documento
     """
+    
+    filename = "name"
+    
+    # Ejemplo de payload para notificar a Laravel
+    payload = {
+        "status": "Archivo recibido",
+        "filename": filename
+    }
+    
+    print(f"Payload to send: {payload}")
+     # Llamas al webhook de Laravel asincrónicamente
+    webhook_url = "http://localhost:8000/api/webhooks/fastapi/status-update"
+    print(f"Calling webhook: {webhook_url} with payload: {payload}")
+    await call_webhook(webhook_url, payload)
+    
     return {"message": "Document analysis is not yet implemented."}
