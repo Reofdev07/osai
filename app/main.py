@@ -1,9 +1,18 @@
 
+import os
 import logging
 
 from fastapi import FastAPI, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+# config.py o al inicio de main.py
+from dotenv import load_dotenv
+
+from .core.llm import create_llm
+
+# Cargar variables de ambiente una sola vez
+load_dotenv()
 
 
 from .core.config import settings
@@ -50,4 +59,10 @@ app.include_router(base_router)
 @app.get("/info")
 def read_root():
     return {
-        "message": f" Hello, World! the app: {settings.APP_NAME} is Running in {settings.FASTAPI_ENV} mode."}
+        "message": f" Hello, World! the app: {settings.APP_NAME} is Running in {settings.ENVIRONMENT} mode."}
+
+@app.get("/test")
+def test_llm():
+    llm = create_llm()
+    response = llm.invoke("¿Cuál es el nombre de tu modelo?")
+    return {"response": response}
