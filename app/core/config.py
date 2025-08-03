@@ -36,6 +36,12 @@ class DevelopmentSettings(Settings):
     AI_PROVIDER: str = "google"
     GOOGLE_API_KEY: str
     
+    # Bucket
+    BUCKET_NAME: str
+    KEY_ID: str
+    KEY_NAME: str
+    APPLICATION_KEY: str
+    
     class Config(Settings.Config):
         # Puedes sobreescribir la configuración si es necesario
         # pero heredando es suficiente en este caso.
