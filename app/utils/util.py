@@ -1,26 +1,41 @@
 import tempfile
 import httpx
 import os
+import tiktoken
 
 
+from  ..graphs.documents_analysis_graph import app_graph
 
+
+#OJO ESTE PUEDE CAMBIAR A OTRO MOUDLO
 async def process_document_graph(file_path: str, job_id: str):
     """
     Esta función representa todo el workflow de LangGraph.
     Recibe la ruta al archivo y hace todo el trabajo.
     """
     print(f"⚙️ Grafo [Job {job_id}]: Iniciando procesamiento para el archivo {file_path}")
-    
-    # 1. Detectar tipo de archivo (PDF/Imagen)
-    # 2. Extraer contenido (Texto/OCR)
-    # 3. Contar tokens
-    # 4. Resumir, clasificar, etc.
-    
-    # Simularemos un error para ver si la limpieza funciona
-    # if job_id.startswith("a"): # Simula un error en algunos casos
-    #     raise ValueError("¡Error de procesamiento simulado en el grafo!")
 
-    print(f"✅ Grafo [Job {job_id}]: Procesamiento completado.")
+    initial_state = {
+        "job_id": job_id, 
+        "file_path": file_path,
+        'file_type': None,                
+        'raw_text': None,       
+        'pages': None,  
+        'classification': None,
+        'summary': None,
+        'entities': None,
+        'tags': None,
+        'tasks_requested': [],
+        'current_step': None,
+        'errors': [],
+        'webhook_sent': False
+    }
+
+    final_state = await app_graph.ainvoke(initial_state)
+    
+    print("\n--- ✅ Grafo Finalizado ---")
+    print("Estado final del workflow:")
+    print(final_state)
     
 
 async def stream_download_file(url: str, job_id: str):
@@ -30,13 +45,9 @@ async def stream_download_file(url: str, job_id: str):
     """
     
     temp_dir = tempfile.gettempdir()
-    temp_file_path = os.path.join(temp_dir, f"{job_id}.tmp")
-
-    print(f"Iniciando Job [{job_id}]: Descargando de {url}")
-    
+    temp_file_path = os.path.join(temp_dir, f"{job_id}.tmp")    
     try:
       # --- PARTE 1: DESCARGA COMPLETA ---
-        print(f"Iniciando Job [{job_id}]: Descargando desde {url}")
         async with httpx.AsyncClient() as client:
             async with client.stream("GET", str(url)) as response:
                 response.raise_for_status()
@@ -59,13 +70,16 @@ async def stream_download_file(url: str, job_id: str):
     
     finally:
         # --- PARTE 3: LIMPIEZA (SIEMPRE AL FINAL) ---
-        print(f"🧹 Limpieza [Job {job_id}]: Intentando eliminar el archivo temporal.")
+        print(f"🧹 Limpieza [Job {job_id}]: Intentando eliminar el archivo temporal.") 
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
             print(f"🗑️ Limpieza [Job {job_id}]: Archivo eliminado exitosamente.")
         else:
             print(f"🤔 Limpieza [Job {job_id}]: El archivo no se encontró para eliminar.")
                
-    print(f"✅ Job [{job_id}]: Descarga completada. El archivo está en {temp_file_path}")
-    print(f"➡️ Job [{job_id}]: Ahora, iniciaríamos el grafo de LangGraph con la ruta del archivo...")
+    
+
+
+ 
+    
     

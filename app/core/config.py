@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT")
     LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY")
     
+    GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    
         
     class Config:
         # Carga primero el .env y luego el específico del entorno.

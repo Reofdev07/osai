@@ -2,13 +2,15 @@ from typing import TypedDict, List, Optional, Dict, Any
 
 class DocumentState(TypedDict):
     # Input inicial
-    file_data: Dict[str, Any]       # Metadata del archivo
-    file_content: bytes             # Contenido binario
+    job_id: str
+    file_path: str
     
     # Procesamiento
     file_type: str                  # pdf_native, pdf_image, image, docx
     raw_text: Optional[str]         # Texto extraído
     pages: Optional[List[bytes]]    # Páginas como imágenes
+    page_count: int | None   # Para contar páginas (útil en ambas rutas)
+    token_count: int | None  # Para contar tokens del contenido final
     
     # Análisis IA
     classification: Optional[Dict]   # Tipo de documento
