@@ -1,0 +1,6 @@
+{
+    "dependencies": ["./requirements.txt"],
+    "graphs": {
+        "documents_analysis_graph": "./app/graphs/documents_analysis_graph.py:app_graph"
+    }
+}

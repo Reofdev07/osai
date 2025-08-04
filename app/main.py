@@ -1,13 +1,23 @@
 
+import os
 import logging
 
 from fastapi import FastAPI, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+# config.py o al inicio de main.py
+from dotenv import load_dotenv
+
+from .core.llm import create_llm
+from .services.b2_service import B2Service
+
+# Cargar variables de ambiente una sola vez
+load_dotenv()
+
 
 from .core.config import settings
-# from .api.routers.base_router import base_router
+from .api.base_router import base_router
 # from .db.database import engine
 # from .db.database import Base
 # from .db.models import *
@@ -44,10 +54,20 @@ app.add_middleware(
 # # Crear las tablas en la base de datos
 # Base.metadata.create_all(bind=engine)
 
-# app.include_router(base_router)
+app.include_router(base_router)
+
+# Solo test ojo -> luego borrar
+b2_service = B2Service()
+bucket = b2_service.get_bucket()
 
 # Endpoint de información general
 @app.get("/info")
 def read_root():
     return {
-        "message": f" Hello, World! the app: {settings.APP_NAME} is Running in {settings.FASTAPI_ENV} mode."}
+        "message": f" Hello, World! the app: {settings.APP_NAME} is Running in {settings.ENVIRONMENT} mode. bucket: {bucket.name}"} 
+
+@app.get("/test")
+def test_llm():
+    llm = create_llm()
+    response = llm.invoke("¿Cuál es el nombre de tu modelo?")
+    return {"response": response}
