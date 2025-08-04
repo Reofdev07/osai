@@ -13,10 +13,11 @@ class DocumentState(TypedDict):
     token_count: int | None  # Para contar tokens del contenido final
     
     # Análisis IA
-    classification: Optional[Dict]   # Tipo de documento
     summary: Optional[str]          # Resumen generado
-    entities: Optional[List[Dict]]  # Entidades extraídas
+    subject: Optional[str]           # Asunto generado
+    classification: Optional[Dict]   # Tipo de documento
     tags: Optional[List[str]]       # Tags generados
+    entities: Optional[List[Dict]]  # Entidades extraídas
     
     # Control de flujo
     tasks_requested: List[str]      # ['classify', 'summarize', 'entities', 'tags']
