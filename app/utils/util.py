@@ -5,6 +5,7 @@ import tiktoken
 
 
 from  ..graphs.documents_analysis_graph import app_graph
+from ..utils.notifications import notify_steps_to_laravel
 
 
 #OJO ESTE PUEDE CAMBIAR A OTRO MOUDLO
@@ -31,11 +32,26 @@ async def process_document_graph(file_path: str, job_id: str):
         'webhook_sent': False
     }
 
-    final_state = await app_graph.ainvoke(initial_state)
+    final_state = None
+    async for step in app_graph.astream(initial_state):
+        step_name = list(step.keys())[0]
+        print(f"Job [{job_id}]: Estado final del nodo '{step_name}' recibido.")
+        final_state = step
+        
+        # await notify_steps_to_laravel(
+        #     job_id=job_id,
+        #     node_name="graph_process",
+        #     status="finished",
+        #     data=final_state
+        # )
+
+    print(f"Job [{job_id}]: Proceso del grafo completado. Estado final: {final_state}")
     
-    print("\n--- ✅ Grafo Finalizado ---")
-    print("Estado final del workflow:")
-    print(final_state)
+    # final_state = await app_graph.ainvoke(initial_state)
+    
+    # print("\n--- ✅ Grafo Finalizado ---")
+    # print("Estado final del workflow:")
+    # print(final_state)
     
 
 async def stream_download_file(url: str, job_id: str):

@@ -11,8 +11,8 @@ from google.cloud import vision
 from app.schemas.graph_state import DocumentState
 from app.utils.token_counter import count_tokens
 from app.core.llm import create_llm
-
 from app.core.config import settings
+from app.utils.notifications import notify_steps_to_laravel
 
 # Establece la ruta del archivo de credenciales
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.GOOGLE_APPLICATION_CREDENTIALS
@@ -78,7 +78,7 @@ def perform_ocr_on_pdf_pages(file_path: str, job_id: str) -> dict:
         return {"error": error_message}
 
 
-def analyze_and_route_node(state: DocumentState) -> DocumentState:
+async def analyze_and_route_node(state: DocumentState) -> DocumentState:
     """
     Nodo de entrada que analiza el archivo y determina la ruta de procesamiento exacta.
     1. Distingue entre PDF e Imagen.
@@ -88,6 +88,14 @@ def analyze_and_route_node(state: DocumentState) -> DocumentState:
     
     file_path = state["file_path"]
     job_id = state["job_id"]
+    step = state.get("step", "Analizando archivo")
+    
+    
+    await notify_steps_to_laravel(
+            job_id=state["job_id"],
+            node_name="analyze_and_route",
+            step=step
+        )
     
     # Heurística: Si la primera página tiene menos de 20 caracteres, la consideramos escaneada.
     TEXT_THRESHOLD = 20
@@ -115,10 +123,17 @@ def analyze_and_route_node(state: DocumentState) -> DocumentState:
                 
         except Exception as e:
             print(f"Job [{job_id}]: PDF corrupto o ilegible ({e}). Se tratará como escaneado.")
+            await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="analyze_and_route",
+                status="failed",
+                data={"error": e},
+            )
             return {"file_type": "pdf_scanned"} # Si falla, la única opción es OCR
 
     elif "image" in mime_type:
         print(f"Job [{job_id}]: Decisión -> Archivo de imagen simple. Ruta cara (OCR).")
+        
         return {"file_type": "image"}
     else:
         print(f"Job [{job_id}]: Decisión -> Tipo de archivo no soportado.")
@@ -126,9 +141,17 @@ def analyze_and_route_node(state: DocumentState) -> DocumentState:
 
 
 # --- NODO PARA LA RUTA 1: PDF CON TEXTO (BARATO) ---
-def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
+async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Extrayendo texto de PDF nativo ---")
     # Este nodo ya sabe que el PDF tiene texto, así que va directo al grano.
+    
+    step = state.get("step", "Extrayendo texto")
+    await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="extract_from_text_pdf_node",
+                step=step
+            )
+    
     try:
         loader = PyMuPDFLoader(state["file_path"])
         docs = loader.load()
@@ -142,22 +165,40 @@ def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
             "token_count": token_count
             }
     except Exception as e:
+        await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="extract_from_text_pdf_node",
+                status="failed",
+                data={"error": e},)
         return {"error": f"Error extrayendo texto de PDF: {e}"}
+        
     
 
 # --- NODO PARA LA RUTA 2: PDF ESCANEADO (CARO) ---
-def extract_from_scanned_pdf_node(state: DocumentState) -> DocumentState:
+async def extract_from_scanned_pdf_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Realizando OCR en PDF escaneado ---")
+    step = state.get("step", "Extrayendo texto")
+    await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="extract_from_text_pdf_node",
+                step=step
+            )
     # Este nodo ya sabe que tiene que hacer OCR, así que no pierde tiempo.
     # Llama a la función que convierte páginas a imagen y usa Vision.
     return perform_ocr_on_pdf_pages(state["file_path"], state["job_id"])
 
 
-def extract_from_single_image_node(state: DocumentState) -> DocumentState:
+async def extract_from_single_image_node(state: DocumentState) -> DocumentState:
     """
     Nodo para archivos de imagen únicos (JPG, PNG, etc.). Siempre tiene 1 página.
     """
     print("--- Worker: Realizando OCR en imagen simple ---")
+    step = state.get("step", "Extrayendo texto")
+    await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="extract_from_text_pdf_node",
+                step=step
+            )
     file_path = state["file_path"]
     job_id = state["job_id"]
 
@@ -174,6 +215,12 @@ def extract_from_single_image_node(state: DocumentState) -> DocumentState:
         response = client.text_detection(image=image)
 
         if response.error.message:
+            await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="extract_from_text_pdf_node",
+                status="failed",
+                data={"error": response.error.message},
+            )
             raise Exception(f"La API de Google Vision devolvió un error: {response.error.message}")
 
         extracted_content = response.full_text_annotation.text
@@ -193,20 +240,30 @@ def extract_from_single_image_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         error_message = f"Ocurrió un error inesperado durante el OCR de la imagen: {e}"
+        await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="extract_from_single_image_node",
+                status="failed",
+                data={"error": error_message},
+            )
         print(f"Job [{job_id}]: {error_message}")
         return {"error": error_message}
 
-
-
-    
-def unsupported_file_node(state: DocumentState) -> DocumentState:
+  
+async def unsupported_file_node(state: DocumentState) -> DocumentState:
     print("--- Nodo: Archivo no soportado ---")
     # Este nodo no hace nada, solo es un final para los archivos no soportados.
     return {}
 
 
-def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
+async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     print("---" + "Worker: Resumiendo y extrayendo asunto" + "---")
+    step = state.get("step", "Resumiendo y extrayendo asunto")
+    await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="summarize_and_get_subject_node",
+                step=step
+            )
     
     prompt = f"""
     Este texto proviene de un sistema automatizado de gestión documental. El resumen y asunto se utilizarán para clasificar y visualizar documentos en una interfaz para personas usuarias. Sé claro y preciso.
@@ -250,15 +307,32 @@ def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     except json.JSONDecodeError as e:
         error_message = f"Error al decodificar el JSON del LLM: {e}. Respuesta recibida: '{response.content}'"
         print(f"Job [{state['job_id']}]: {error_message}")
+        await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="summarize_and_get_subject_node",
+                status="failed",
+                data={"error": error_message},
+            )
         return {"error": error_message}
     except Exception as e:
         error_message = f"Error inesperado en el nodo de resumen: {e}"
         print(f"Job [{state['job_id']}]: {error_message}")
+        await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="summarize_and_get_subject_node",
+                status="failed",
+                data={"error": error_message},
+            )
         return {"error": error_message}
-    
-    
-def classify_document_node(state: DocumentState) -> DocumentState:
+      
+async def classify_document_node(state: DocumentState) -> DocumentState:
     print("---" + "Worker: Clasificando el documento" + "---")
+    step = state.get("step", "Clasificando el documento")
+    await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="classify_document_node",
+                step=step
+            )
     
     # El contexto es el resumen y el texto original
     #context = f"Asunto: {state['subject']}\nResumen: {state['summary']}\nTexto: {state['raw_text'][:8000]}"
@@ -304,15 +378,19 @@ def classify_document_node(state: DocumentState) -> DocumentState:
     
     return {"classification": classification}
 
-
-
-def tag_document_node(state: DocumentState) -> DocumentState:
+async def tag_document_node(state: DocumentState) -> DocumentState:
     print("---" + "Worker: Generando etiquetas" + "---")
     
     # Hacemos el nodo más robusto usando .get() para evitar KeyErrors
     classification = state.get('classification', 'N/A')
     subject = state.get('subject', 'N/A')
     summary = state.get('summary', 'N/A')
+    step = state.get("step", "Generando etiquetas")
+    await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="tag_document_node",
+                step=step
+            )
 
     prompt = f"""
     Eres un asistente experto en análisis documental. 
@@ -339,19 +417,29 @@ def tag_document_node(state: DocumentState) -> DocumentState:
         tags = json.loads(cleaned_content)
     except json.JSONDecodeError:
         # Si falla el JSON, creamos etiquetas a partir del texto plano
+        await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="tag_document_node",
+                status="failed",
+                data={"error": "Error al decodificar JSON"},
+            )
         tags = [tag.strip() for tag in response.content.split(',')]
 
     return {"tags": tags}
 
 
-
-
-def extract_entities_node(state: DocumentState) -> DocumentState:
+async def extract_entities_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Extrayendo entidades clave del documento con contexto enriquecido ---")
 
     classification = state.get("classification", "Otro")
     subject = state.get("subject", "")
     summary = state.get("summary", "")
+    step = state.get("step", "Extrayendo entidades clave")
+    await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="extract_entities_node",
+                step=step
+            )
 
     prompt = f"""
     Eres un asistente experto en gestión documental en Colombia.
@@ -403,13 +491,19 @@ def extract_entities_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         print(f"Error extrayendo entidades: {e}")
+        await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="extract_entities_node",
+                status="failed",
+                data={"error": f"Fallo en extracción de entidades: {e}"},
+            )
         return {
             "entities": {},
             "error": f"Fallo en extracción de entidades: {e}"
         }
         
 
-def compliance_analysis_node(state: DocumentState) -> DocumentState:
+async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     print("--- Nodo: Análisis de conformidad para radicación documental ---")
 
     classification = state.get("classification", "Otro")
@@ -417,6 +511,12 @@ def compliance_analysis_node(state: DocumentState) -> DocumentState:
     summary = state.get("summary", "")
     raw_text = state.get("raw_text", "")
     entities = state.get("entities", {})
+    step = state.get("step", "Analizando conformidad")
+    await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="compliance_analysis_node",
+                step=step
+            )
 
     criterios_radicar = """
     Criterios mínimos que debe cumplir un documento para ser aceptado para radicación:
@@ -467,6 +567,12 @@ def compliance_analysis_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         print(f"Error en análisis de conformidad: {e}")
+        await notify_steps_to_laravel(
+                job_id=state["job_id"],
+                node_name="compliance_analysis_node",
+                status="failed",
+                data={"error": f"Fallo en análisis de conformidad: {e}"},
+            )
         return {
             "compliance_analysis": {},
             "error": f"Fallo en análisis de conformidad: {e}"
