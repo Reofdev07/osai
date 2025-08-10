@@ -12,7 +12,10 @@ from app.graphs.nodes.documents_analysis_nodes import (
     classify_document_node,
     tag_document_node,
     extract_entities_node,
-    compliance_analysis_node
+    compliance_analysis_node,
+    intent_detection_node,
+    sentiment_and_urgency_node,
+    priority_assignment_node
     )
 from app.graphs.edges.documents_analysis_edges import (
     route_based_on_file_type
@@ -32,9 +35,12 @@ workflow.add_node("unsupported", unsupported_file_node)
 
 
 workflow.add_node("summarize", summarize_and_get_subject_node)
+workflow.add_node("intent_detection_node", intent_detection_node)
+workflow.add_node("sentiment_and_urgency_node", sentiment_and_urgency_node)
 workflow.add_node("classify", classify_document_node)
 workflow.add_node("tag", tag_document_node)
 workflow.add_node("extract_entities", extract_entities_node)
+workflow.add_node("priority_assignment_node", priority_assignment_node)
 workflow.add_node("analyze_compliance", compliance_analysis_node)
 
 workflow.set_entry_point("analyze_and_route")
@@ -52,13 +58,16 @@ workflow.add_conditional_edges(
 workflow.add_edge("text_pdf", "summarize")
 workflow.add_edge("scanned_pdf", "summarize")
 workflow.add_edge("image", "summarize")
-workflow.add_edge("unsupported", END)
+#workflow.add_edge("unsupported", END)
 
 
-workflow.add_edge("summarize", "classify")
+workflow.add_edge("summarize", "intent_detection_node")
+workflow.add_edge("intent_detection_node", "sentiment_and_urgency_node")
+workflow.add_edge("sentiment_and_urgency_node", "classify")
 workflow.add_edge("classify", "tag")
 workflow.add_edge("tag", "extract_entities")
-workflow.add_edge("extract_entities", "analyze_compliance")
+workflow.add_edge("extract_entities", "priority_assignment_node")
+workflow.add_edge("priority_assignment_node", "analyze_compliance")
 workflow.add_edge("analyze_compliance", END)
 
 app_graph = workflow.compile()

@@ -25,9 +25,7 @@ def perform_ocr_on_pdf_pages(file_path: str, job_id: str) -> dict:
     """
     Toma un archivo PDF, convierte cada página a imagen en memoria y ejecuta OCR en cada una.
     Esta función es para los PDF que son escaneados. Devuelve un diccionario para el estado.
-    """
-    print(f"Job [{job_id}]: PDF detectado como escaneado. Cambiando a modo OCR página por página.")
-    
+    """    
     client = vision.ImageAnnotatorClient()
     all_text = []
 
@@ -83,21 +81,18 @@ async def analyze_and_route_node(state: DocumentState) -> DocumentState:
     Nodo de entrada que analiza el archivo y determina la ruta de procesamiento exacta.
     1. Distingue entre PDF e Imagen.
     2. Si es PDF, "inspecciona" la primera página para ver si es escaneado.
-    """
-    print("--- Nodo: Analizando archivo para enrutamiento eficiente ---")
-    
+    """    
     file_path = state["file_path"]
     job_id = state["job_id"]
     step = state.get("step", "Analizando archivo")
     
     
-    await notify_steps_to_laravel(
-            job_id=state["job_id"],
-            node_name="analyze_and_route",
-            step=step
-        )
+    # await notify_steps_to_laravel(
+    #         job_id=state["job_id"],
+    #         node_name="analyze_and_route",
+    #         step=step
+    #     )
     
-    # Heurística: Si la primera página tiene menos de 20 caracteres, la consideramos escaneada.
     TEXT_THRESHOLD = 20
     
     # Primero, usamos 'magic' para saber si es un PDF o una imagen simple
@@ -123,12 +118,12 @@ async def analyze_and_route_node(state: DocumentState) -> DocumentState:
                 
         except Exception as e:
             print(f"Job [{job_id}]: PDF corrupto o ilegible ({e}). Se tratará como escaneado.")
-            await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="analyze_and_route",
-                status="failed",
-                data={"error": e},
-            )
+            # await notify_steps_to_laravel(
+            #     job_id=state["job_id"],
+            #     node_name="analyze_and_route",
+            #     status="failed",
+            #     data={"error": e},
+            # )
             return {"file_type": "pdf_scanned"} # Si falla, la única opción es OCR
 
     elif "image" in mime_type:
@@ -146,11 +141,11 @@ async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
     # Este nodo ya sabe que el PDF tiene texto, así que va directo al grano.
     
     step = state.get("step", "Extrayendo texto")
-    await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="extract_from_text_pdf_node",
-                step=step
-            )
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="extract_from_text_pdf_node",
+    #             step=step
+    #         )
     
     try:
         loader = PyMuPDFLoader(state["file_path"])
@@ -165,11 +160,11 @@ async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
             "token_count": token_count
             }
     except Exception as e:
-        await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="extract_from_text_pdf_node",
-                status="failed",
-                data={"error": e},)
+        # await notify_steps_to_laravel(
+        #         job_id=state["job_id"],
+        #         node_name="extract_from_text_pdf_node",
+        #         status="failed",
+        #         data={"error": e},)
         return {"error": f"Error extrayendo texto de PDF: {e}"}
         
     
@@ -178,15 +173,14 @@ async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
 async def extract_from_scanned_pdf_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Realizando OCR en PDF escaneado ---")
     step = state.get("step", "Extrayendo texto")
-    await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="extract_from_text_pdf_node",
-                step=step
-            )
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="extract_from_text_pdf_node",
+    #             step=step
+    #         )
     # Este nodo ya sabe que tiene que hacer OCR, así que no pierde tiempo.
     # Llama a la función que convierte páginas a imagen y usa Vision.
     return perform_ocr_on_pdf_pages(state["file_path"], state["job_id"])
-
 
 async def extract_from_single_image_node(state: DocumentState) -> DocumentState:
     """
@@ -194,11 +188,11 @@ async def extract_from_single_image_node(state: DocumentState) -> DocumentState:
     """
     print("--- Worker: Realizando OCR en imagen simple ---")
     step = state.get("step", "Extrayendo texto")
-    await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="extract_from_text_pdf_node",
-                step=step
-            )
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="extract_from_text_pdf_node",
+    #             step=step
+    #         )
     file_path = state["file_path"]
     job_id = state["job_id"]
 
@@ -215,12 +209,12 @@ async def extract_from_single_image_node(state: DocumentState) -> DocumentState:
         response = client.text_detection(image=image)
 
         if response.error.message:
-            await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="extract_from_text_pdf_node",
-                status="failed",
-                data={"error": response.error.message},
-            )
+            # await notify_steps_to_laravel(
+            #     job_id=state["job_id"],
+            #     node_name="extract_from_text_pdf_node",
+            #     status="failed",
+            #     data={"error": response.error.message},
+            # )
             raise Exception(f"La API de Google Vision devolvió un error: {response.error.message}")
 
         extracted_content = response.full_text_annotation.text
@@ -240,30 +234,30 @@ async def extract_from_single_image_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         error_message = f"Ocurrió un error inesperado durante el OCR de la imagen: {e}"
-        await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="extract_from_single_image_node",
-                status="failed",
-                data={"error": error_message},
-            )
+        # await notify_steps_to_laravel(
+        #         job_id=state["job_id"],
+        #         node_name="extract_from_single_image_node",
+        #         status="failed",
+        #         data={"error": error_message},
+        #     )
         print(f"Job [{job_id}]: {error_message}")
         return {"error": error_message}
 
-  
 async def unsupported_file_node(state: DocumentState) -> DocumentState:
     print("--- Nodo: Archivo no soportado ---")
     # Este nodo no hace nada, solo es un final para los archivos no soportados.
     return {}
 
 
+# --- NODO PARA LA RUTA 1: SUMMARIZO Y EXTRACCION DE ASUNTO ---
 async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     print("---" + "Worker: Resumiendo y extrayendo asunto" + "---")
     step = state.get("step", "Resumiendo y extrayendo asunto")
-    await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="summarize_and_get_subject_node",
-                step=step
-            )
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="summarize_and_get_subject_node",
+    #             step=step
+    #         )
     
     prompt = f"""
     Este texto proviene de un sistema automatizado de gestión documental. El resumen y asunto se utilizarán para clasificar y visualizar documentos en una interfaz para personas usuarias. Sé claro y preciso.
@@ -307,77 +301,214 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     except json.JSONDecodeError as e:
         error_message = f"Error al decodificar el JSON del LLM: {e}. Respuesta recibida: '{response.content}'"
         print(f"Job [{state['job_id']}]: {error_message}")
-        await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="summarize_and_get_subject_node",
-                status="failed",
-                data={"error": error_message},
-            )
+        # await notify_steps_to_laravel(
+        #         job_id=state["job_id"],
+        #         node_name="summarize_and_get_subject_node",
+        #         status="failed",
+        #         data={"error": error_message},
+        #     )
         return {"error": error_message}
     except Exception as e:
         error_message = f"Error inesperado en el nodo de resumen: {e}"
         print(f"Job [{state['job_id']}]: {error_message}")
-        await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="summarize_and_get_subject_node",
-                status="failed",
-                data={"error": error_message},
-            )
+        # await notify_steps_to_laravel(
+        #         job_id=state["job_id"],
+        #         node_name="summarize_and_get_subject_node",
+        #         status="failed",
+        #         data={"error": error_message},
+        #     )
         return {"error": error_message}
-      
+
+
+  
+# --- NODO PARA ANALSIS DE SENTIMIENTOS Y DETECCION DE URGENCIAS ---
+async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
+    print("--- Worker: Analizando sentimiento, Intención y Prioridad ---")
+    step = state.get("step", "Analizando Sentimiento, Intención y Prioridad")
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="sentiment_and_urgency_node",
+    #             step=step
+    #         )
+
+    # Usamos el resumen y el inicio del texto para un análisis rápido y barato
+    contexto_analisis = f"Asunto: {state.get('subject', '')}\nResumen: {state.get('summary', '')}\nPrimeros párrafos: {state.get('raw_text', '')[:1000]}"
+
+    prompt = f"""
+    Eres un experto en comunicación y psicología. Analiza el siguiente texto de un documento oficial.
+
+    Contexto del Documento:
+    {contexto_analisis}
+
+    Realiza dos tareas:
+    1.  **Análisis de Sentimiento:** Evalúa el tono general del remitente.
+    2.  **Detección de Urgencia:** Identifica si el lenguaje sugiere una necesidad de respuesta inmediata.
+
+    Devuelve únicamente un objeto JSON con la siguiente estructura:
+    {{
+      "sentimiento": {{
+        "etiqueta": "Positivo | Neutro | Negativo",
+        "puntuacion": "Un número de -1.0 (muy negativo) a 1.0 (muy positivo)",
+        "justificacion": "Una breve explicación de por qué se asignó ese sentimiento."
+      }},
+      "urgencia": {{
+        "nivel": "Baja | Media | Alta | Crítica",
+        "justificacion": "Explica por qué el lenguaje del documento implica este nivel de urgencia."
+      }}
+    }}
+
+    Ejemplo para una queja fuerte:
+    {{
+      "sentimiento": {{
+        "etiqueta": "Negativo",
+        "puntuacion": -0.8,
+        "justificacion": "El remitente usa un lenguaje confrontacional y expresa frustración con el servicio."
+      }},
+      "urgencia": {{
+        "nivel": "Alta",
+        "justificacion": "El remitente menciona 'respuesta inmediata' y amenaza con acciones legales."
+      }}
+    }}
+
+    NO uses bloques de código ni comillas triples. Devuelve solo el JSON.
+    """
+    try:
+        response = llm.invoke(prompt)
+        cleaned_content = re.sub(r"^```(?:json)?\s*|```$", "", response.content.strip(), flags=re.IGNORECASE).strip()
+        analysis_result = json.loads(cleaned_content)
+        return {"sentiment_analysis": analysis_result}
+    except Exception as e:
+        # Gestionar error
+        return {"error": f"Fallo en análisis de sentimiento: {e}"}
+  
+
+# ----DETECCION DE INTENCION PRINCIPAL---------
+async def intent_detection_node(state: DocumentState) -> DocumentState:
+    print("--- Worker: Detección de intención ---")
+    step = state.get("step", "Detección de intención")
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="intent_detection_node",
+    #             step=step
+    #         )
+    contexto_analisis = f"Asunto: {state.get('subject', '')}\nResumen: {state.get('summary', '')}"
+
+    prompt = f"""
+    Eres un analista experto en trámites. Tu objetivo es identificar la acción principal que el remitente quiere que la entidad realice.
+
+    Contexto:
+    {contexto_analisis}
+
+    Selecciona la intención principal de la siguiente lista de acciones predefinidas:
+    - "Solicitar Información": El remitente pide datos, copias, o aclaraciones.
+    - "Presentar Queja/Reclamo": El remitente expresa insatisfacción o denuncia un problema.
+    - "Radicar para Pago": El remitente envía una factura o cuenta de cobro para ser pagada.
+    - "Entregar Documentación Requerida": El remitente está respondiendo a una solicitud previa de la entidad.
+    - "Iniciar Trámite Nuevo": El remitente está solicitando un permiso, licencia, o un nuevo proceso.
+    - "Notificar Decisión/Resolución": Un ente externo o interno está informando de una decisión legal o administrativa.
+    - "Consulta General": El remitente hace una pregunta general que no requiere una acción compleja.
+    - "Informativo/Cortesía": El documento no requiere acción, es solo para mantener informada a la entidad.
+
+    Devuelve únicamente un objeto JSON con la siguiente estructura:
+    {{
+      "intencion": "El nombre exacto de la intención de la lista",
+      "justificacion": "Una frase corta que explique por qué elegiste esa intención, basada en el texto."
+    }}
+    """
+    try:
+        response = llm.invoke(prompt)
+        cleaned_content = re.sub(r"^```(?:json)?\s*|```$", "", response.content.strip(), flags=re.IGNORECASE).strip()
+        analysis_result = json.loads(cleaned_content)
+        return {"intent_analysis": analysis_result}
+    except Exception as e:
+        return {"error": f"Fallo en detección de intención: {e}"}
+
+
+# --- NODO PARA LA RUTA 1: CLASIFICACION, ETIQUETAS Y EXTRACCION DE ENTIDADES ---    
 async def classify_document_node(state: DocumentState) -> DocumentState:
     print("---" + "Worker: Clasificando el documento" + "---")
     step = state.get("step", "Clasificando el documento")
-    await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="classify_document_node",
-                step=step
-            )
-    
-    # El contexto es el resumen y el texto original
-    #context = f"Asunto: {state['subject']}\nResumen: {state['summary']}\nTexto: {state['raw_text'][:8000]}"
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="classify_document_node",
+    #             step=step
+    #         )
     
     # Extraemos información del estado
-    subject = state.get("subject", "")
-    summary = state.get("summary", "")
+    subject = state.get("subject", "No disponible")
+    summary = state.get("summary", "No disponible")
+    intent_analysis = state.get("intent_analysis")
+    intencion_detectada = intent_analysis.get("intencion", "No disponible")
     raw_text = state.get("raw_text", "")[:8000]  # Limitar para evitar contexto muy largo
     
     prompt = f"""
-    Eres un asistente experto en clasificación documental para entidades públicas en Colombia. 
-    Tu tarea es analizar un documento recibido por ventanilla, email, entre otras.. y clasificarlo según su tipo documental.
+    Eres un asistente experto en clasificación documental para una entidad pública en Colombia, 
+    especializado en el Programa de Gestión Documental (PGD) y en las normas archivísticas vigentes.
 
-    Clasifica el documento en una de las siguientes categorías comunes:
-    - Factura
-    - Contrato
-    - Tutela
-    - Derecho de Petición
-    - Hoja de Vida
-    - Cédula de Ciudadanía
-    - Informe Técnico
-    - Certificado
-    - Correspondencia Oficial
-    - Otro
+    ### Marco Legal y Normativo:
+    - **Ley 594 de 2000 (Ley General de Archivos)**:
+    - Art. 21: "Los documentos de archivo deben organizarse atendiendo a los principios de procedencia y orden original, respetando la estructura orgánica y funcional de la entidad productora."
+    - Art. 22: "La clasificación documental es el proceso de identificación y organización de las series documentales de acuerdo con las funciones y actividades de la entidad."
+    - **Acuerdo 060 de 2001 - Archivo General de la Nación (AGN)**:
+    - Art. 5: "El Programa de Gestión Documental (PGD) es el instrumento archivístico que desarrolla los procesos de producción, recepción, distribución, trámite, organización, consulta, conservación y disposición final de los documentos de archivo."
+    - Art. 6: "Las tipologías documentales serán definidas a partir del análisis de las series y subseries establecidas en las Tablas de Retención Documental (TRD)."
 
-    Solo responde con el nombre de la categoría que más se ajusta. No des explicaciones.
+    ### Contexto del Documento a Analizar:
+    Asunto: {subject}
+    Resumen: {summary}
+    Intención detectada: {intencion_detectada}
+    Texto completo (primeros 8000 caracteres): {raw_text}
 
-    ---
-    ASUNTO:
-    {subject}
+    ### Tipologías Documentales Disponibles (derivadas del PGD y TRD):
+    ["Acto Administrativo", "Contrato", "Informe", "Factura o Cuenta de Cobro", "Historia Laboral", 
+    "Hoja de Vida", "Solicitud", "Tutela", "Comunicación Oficial", "Documento de Identidad", 
+    "Póliza", "Certificado", "Otro"]
 
-    RESUMEN:
-    {summary}
+    ### Instrucciones:
+    1. Analiza el documento considerando las definiciones legales y archivísticas anteriores.
+    2. Asigna la tipología más precisa según la lista proporcionada (no inventes nuevas tipologías).
+    3. Basa tu clasificación en el PGD y en la TRD de la entidad.
+    4. **Validación obligatoria:**
+    - La tipología debe ser exactamente una de la lista anterior.
+    - El valor de "confianza" debe ser un número entre 0.0 y 1.0 (máximo 2 decimales).
+    - Si no es posible clasificar con certeza, asigna "Otro" con confianza ≤ 0.5.
+    5. Devuelve únicamente un objeto JSON válido.
 
-    FRAGMENTO DEL TEXTO COMPLETO:
-    {raw_text}
-    
-    NO uses bloques de código ni comillas triples. Devuelve solo el JSON sin envoltorios.
+    ### Formato de Salida:
+    {{
+    "tipologia_documental": "Uno de los valores exactos de la lista",
+    "confianza": 0.00
+    }}
     """
-    response = llm.invoke(prompt)
-    
-    classification = response.content
-    
-    return {"classification": classification}
+    try:
+        response = llm.invoke(prompt)
+        cleaned_content = re.sub(r"^```(?:json)?\s*|```$", "", response.content.strip(), flags=re.IGNORECASE).strip()
+        classification = json.loads(cleaned_content)
+        return {"classification": classification}
+    except json.JSONDecodeError as e:
+        error_message = f"Error al decodificar el JSON del LLM: {e}. Respuesta recibida: '{response.content}'"
+        print(f"Job [{state['job_id']}]: {error_message}")
+        # await notify_steps_to_laravel(
+        #         job_id=state["job_id"],
+        #         node_name="classify_document_node",
+        #         status="failed",
+        #         data={"error": error_message},
+        #     )
+        return {"error": error_message}
+    except Exception as e:
+        error_message = f"Error inesperado en el nodo de clasificación: {e}"
+        print(f"Job [{state['job_id']}]: {error_message}")
+        # await notify_steps_to_laravel(
+        #         job_id=state["job_id"],
+        #         node_name="classify_document_node",
+        #         status="failed",
+        #         data={"error": error_message},
+        #     )
+        return {"error": error_message} 
 
+
+
+# --- NODO PARA LA RUTA 2: EXTRACCION DE ETIQUETAS ---
 async def tag_document_node(state: DocumentState) -> DocumentState:
     print("---" + "Worker: Generando etiquetas" + "---")
     
@@ -386,11 +517,11 @@ async def tag_document_node(state: DocumentState) -> DocumentState:
     subject = state.get('subject', 'N/A')
     summary = state.get('summary', 'N/A')
     step = state.get("step", "Generando etiquetas")
-    await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="tag_document_node",
-                step=step
-            )
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="tag_document_node",
+    #             step=step
+    #         )
 
     prompt = f"""
     Eres un asistente experto en análisis documental. 
@@ -428,6 +559,7 @@ async def tag_document_node(state: DocumentState) -> DocumentState:
     return {"tags": tags}
 
 
+# --- NODO PARA LA RUTA 3: EXTRACCION DE ENTIDADES ---
 async def extract_entities_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Extrayendo entidades clave del documento con contexto enriquecido ---")
 
@@ -435,11 +567,11 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
     subject = state.get("subject", "")
     summary = state.get("summary", "")
     step = state.get("step", "Extrayendo entidades clave")
-    await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="extract_entities_node",
-                step=step
-            )
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="extract_entities_node",
+    #             step=step
+    #         )
 
     prompt = f"""
     Eres un asistente experto en gestión documental en Colombia.
@@ -491,18 +623,118 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         print(f"Error extrayendo entidades: {e}")
-        await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="extract_entities_node",
-                status="failed",
-                data={"error": f"Fallo en extracción de entidades: {e}"},
-            )
+        # await notify_steps_to_laravel(
+        #         job_id=state["job_id"],
+        #         node_name="extract_entities_node",
+        #         status="failed",
+        #         data={"error": f"Fallo en extracción de entidades: {e}"},
+        #     )
         return {
             "entities": {},
             "error": f"Fallo en extracción de entidades: {e}"
         }
-        
+    
+    
+async def priority_assignment_node(state: DocumentState) -> DocumentState:
+    print("--- Worker: Asignando Prioridad Legal y Operativa ---")
+    
+    contexto_completo = {
+        "clasificacion": state.get("classification"),
+        "intencion": state.get("intent_analysis", {}).get("intencion"),
+        "sentimiento": state.get("sentiment_analysis", {}).get("sentimiento", {}).get("etiqueta"),
+        "urgencia_tono": state.get("sentiment_analysis", {}).get("urgencia", {}).get("nivel"),
+        "entidades": state.get("entities", {})
+    }
 
+    prompt = f"""
+Eres un asesor legal experto en derecho administrativo colombiano,
+especializado en la Ley 1755 de 2015 (Derecho de Petición) y normativas de archivo.
+
+Tu tarea es asignar un **nivel de prioridad** a un documento recién radicado,
+sustentando la decisión en argumentos **legales y/o técnicos**.
+
+### MARCO LEGAL (Ley 1755 de 2015)
+
+**Artículo 14 - Término General**
+- Peticiones generales → 15 días hábiles.
+- Solicitudes de documentos/información (inciso 2) → 10 días hábiles.
+- Consultas (inciso 3) → 30 días hábiles.
+
+**Artículo 19 - Entre Autoridades**
+- Peticiones entre autoridades → 10 días hábiles.
+
+**Artículo 20 - Prioridad Absoluta**
+Atención preferente a:
+1. Acciones de tutela (horas o pocos días).
+2. Solicitudes de periodistas para su labor.
+3. Peticiones de niños, niñas y adolescentes para garantizar derechos fundamentales.
+
+### CRITERIOS DE PRIORIZACIÓN (de mayor a menor)
+
+**PRIORIDAD CRÍTICA**
+- Acción de tutela, orden judicial o riesgo inminente para la vida/seguridad.
+- Plazo: horas o muy pocos días.
+
+**PRIORIDAD ALTA**
+- Derecho de Petición de periodista (Art. 20).
+- Solicitud de documentos/información (Art. 14, inc. 2) → 10 días hábiles.
+- Petición de menor de edad (Art. 20).
+- Tono muy negativo + urgencia crítica.
+
+**PRIORIDAD MEDIA**
+- Derecho de Petición general (Art. 14) → 15 días hábiles.
+- Cuenta de cobro/factura próxima a vencer.
+- Queja o reclamo con tono negativo.
+
+**PRIORIDAD BAJA**
+- Consulta general (Art. 14, inc. 3) → 30 días hábiles.
+- Documento informativo, cortesía o sin acción urgente.
+
+### DATOS DEL DOCUMENTO A EVALUAR
+{json.dumps(contexto_completo, indent=2, ensure_ascii=False)}
+
+### INSTRUCCIONES ESTRICTAS
+1. Analiza el documento y determina el nivel de prioridad.
+2. Sustenta la decisión con **referencia expresa** al artículo y la Ley 1755 de 2015.
+3. Asigna un **término de respuesta sugerido** en días hábiles.
+4. NO incluyas explicaciones fuera del JSON.
+5. Si no encuentras información suficiente, elige el nivel más bajo posible y justifica.
+
+### FORMATO DE RESPUESTA OBLIGATORIO (JSON VÁLIDO ÚNICAMENTE)
+{{
+  "prioridad": "Crítica | Alta | Media | Baja",
+  "justificacion_legal": "Ejemplo: 'Prioridad Alta por ser petición de documentos (Art. 14, inc. 2, Ley 1755 de 2015)'",
+  "termino_respuesta_sugerido_dias": 10
+}}
+
+RESPONDE ÚNICAMENTE CON EL JSON SOLICITADO.
+"""
+
+
+    try:
+        response = llm.invoke(prompt)
+        raw_content = response.content.strip()
+
+        # Si el LLM envía texto adicional, intenta extraer solo el JSON
+        json_match = re.search(r"\{.*\}", raw_content, re.DOTALL)
+        if not json_match:
+            return {"error": f"Respuesta no contiene JSON válido: {raw_content}"}
+
+        cleaned_content = json_match.group()
+
+        try:
+            analysis_result = json.loads(cleaned_content)
+        except json.JSONDecodeError as e:
+            return {"error": f"JSON inválido: {e}. Respuesta: {cleaned_content}"}
+
+        return {"priority_analysis": analysis_result}
+
+    except Exception as e:
+        return {"error": f"Fallo en asignación de prioridad: {e}"}
+
+
+
+# --- NODO PARA LA RUTA 4: ANÁLISIS DE CONFORMIDAD ---
 async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     print("--- Nodo: Análisis de conformidad para radicación documental ---")
 
@@ -512,11 +744,11 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     raw_text = state.get("raw_text", "")
     entities = state.get("entities", {})
     step = state.get("step", "Analizando conformidad")
-    await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="compliance_analysis_node",
-                step=step
-            )
+    # await notify_steps_to_laravel(
+    #             job_id=state["job_id"],
+    #             node_name="compliance_analysis_node",
+    #             step=step
+    #         )
 
     criterios_radicar = """
     Criterios mínimos que debe cumplir un documento para ser aceptado para radicación:
@@ -567,12 +799,12 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         print(f"Error en análisis de conformidad: {e}")
-        await notify_steps_to_laravel(
-                job_id=state["job_id"],
-                node_name="compliance_analysis_node",
-                status="failed",
-                data={"error": f"Fallo en análisis de conformidad: {e}"},
-            )
+        # await notify_steps_to_laravel(
+        #         job_id=state["job_id"],
+        #         node_name="compliance_analysis_node",
+        #         status="failed",
+        #         data={"error": f"Fallo en análisis de conformidad: {e}"},
+        #     )
         return {
             "compliance_analysis": {},
             "error": f"Fallo en análisis de conformidad: {e}"

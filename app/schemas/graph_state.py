@@ -17,6 +17,9 @@ class DocumentState(TypedDict):
     # Análisis IA
     summary: Optional[str]          # Resumen generado
     subject: Optional[str]           # Asunto generado
+    sentiment_analysis: Optional[Dict]  # Análisis de sentimiento e intención
+    intent_analysis: Optional[Dict]  # Análisis de intención
+    priority_analysis: Optional[Dict]  # Análisis de prioridad
     classification: Optional[Dict]   # Tipo de documento
     tags: Optional[List[str]]       # Tags generados
     entities: Optional[List[Dict]]  # Entidades extraídas

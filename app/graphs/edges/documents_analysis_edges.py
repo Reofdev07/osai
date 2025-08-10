@@ -6,7 +6,6 @@ def decide_extraction_path(state: DocumentState) -> Literal["extract_pdf", "extr
     """
     Esta función lee el estado y decide cuál es el siguiente nodo a ejecutar.
     """
-    print("--- Decidiendo la ruta... ---")
     if state.get("error"):
         return "unsupported_end"
         
