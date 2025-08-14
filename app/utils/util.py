@@ -140,9 +140,7 @@ async def process_document_graph(file_path: str, job_id: str):
     accumulated_state = initial_state.copy()
 
     async for step in app_graph.astream(initial_state):
-        # --- CORRECCIÓN CLAVE ---
-        # Iteramos sobre CADA NODO que pueda venir en el paso actual.
-        # Esto maneja tanto `{'node_a': ...}` como `{'node_a': ..., 'node_b': ...}`
+        
         for node_name, step_output in step.items():
             print(f"Job [{job_id}]: Progreso -> Nodo '{node_name}' completado.")
             

@@ -86,13 +86,7 @@ async def analyze_and_route_node(state: DocumentState) -> DocumentState:
     job_id = state["job_id"]
     step = state.get("step", "Analizando archivo")
     
-    
-    # await notify_steps_to_laravel(
-    #         job_id=state["job_id"],
-    #         node_name="analyze_and_route",
-    #         step=step
-    #     )
-    
+
     TEXT_THRESHOLD = 20
     
     # Primero, usamos 'magic' para saber si es un PDF o una imagen simple
@@ -110,7 +104,6 @@ async def analyze_and_route_node(state: DocumentState) -> DocumentState:
             doc.close() # Cierra el archivo inmediatamente
             
             if len(text) > TEXT_THRESHOLD:
-                print(f"Job [{job_id}]: Decisión -> PDF con texto. Ruta barata.")
                 return {"file_type": "pdf_text"}
             else:
                 print(f"Job [{job_id}]: Decisión -> PDF escaneado. Ruta cara (OCR).")
@@ -118,13 +111,7 @@ async def analyze_and_route_node(state: DocumentState) -> DocumentState:
                 
         except Exception as e:
             print(f"Job [{job_id}]: PDF corrupto o ilegible ({e}). Se tratará como escaneado.")
-            # await notify_steps_to_laravel(
-            #     job_id=state["job_id"],
-            #     node_name="analyze_and_route",
-            #     status="failed",
-            #     data={"error": e},
-            # )
-            return {"file_type": "pdf_scanned"} # Si falla, la única opción es OCR
+            return {"file_type": "pdf_scanned"}
 
     elif "image" in mime_type:
         print(f"Job [{job_id}]: Decisión -> Archivo de imagen simple. Ruta cara (OCR).")
@@ -138,33 +125,22 @@ async def analyze_and_route_node(state: DocumentState) -> DocumentState:
 # --- NODO PARA LA RUTA 1: PDF CON TEXTO (BARATO) ---
 async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Extrayendo texto de PDF nativo ---")
-    # Este nodo ya sabe que el PDF tiene texto, así que va directo al grano.
     
     step = state.get("step", "Extrayendo texto")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="extract_from_text_pdf_node",
-    #             step=step
-    #         )
-    
+
     try:
         loader = PyMuPDFLoader(state["file_path"])
         docs = loader.load()
         page_count = len(docs)
         content = "".join([doc.page_content for doc in docs])
         token_count = count_tokens(content)
-        print(f"Job [{state['job_id']}]: Costo -> Páginas: {page_count}, Tokens: {token_count}")
         return {
             "raw_text": content, 
             "page_count": page_count,
             "token_count": token_count
             }
     except Exception as e:
-        # await notify_steps_to_laravel(
-        #         job_id=state["job_id"],
-        #         node_name="extract_from_text_pdf_node",
-        #         status="failed",
-        #         data={"error": e},)
+
         return {"error": f"Error extrayendo texto de PDF: {e}"}
         
     
@@ -173,11 +149,6 @@ async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
 async def extract_from_scanned_pdf_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Realizando OCR en PDF escaneado ---")
     step = state.get("step", "Extrayendo texto")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="extract_from_text_pdf_node",
-    #             step=step
-    #         )
     # Este nodo ya sabe que tiene que hacer OCR, así que no pierde tiempo.
     # Llama a la función que convierte páginas a imagen y usa Vision.
     return perform_ocr_on_pdf_pages(state["file_path"], state["job_id"])
@@ -188,11 +159,6 @@ async def extract_from_single_image_node(state: DocumentState) -> DocumentState:
     """
     print("--- Worker: Realizando OCR en imagen simple ---")
     step = state.get("step", "Extrayendo texto")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="extract_from_text_pdf_node",
-    #             step=step
-    #         )
     file_path = state["file_path"]
     job_id = state["job_id"]
 
@@ -209,12 +175,6 @@ async def extract_from_single_image_node(state: DocumentState) -> DocumentState:
         response = client.text_detection(image=image)
 
         if response.error.message:
-            # await notify_steps_to_laravel(
-            #     job_id=state["job_id"],
-            #     node_name="extract_from_text_pdf_node",
-            #     status="failed",
-            #     data={"error": response.error.message},
-            # )
             raise Exception(f"La API de Google Vision devolvió un error: {response.error.message}")
 
         extracted_content = response.full_text_annotation.text
@@ -234,12 +194,6 @@ async def extract_from_single_image_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         error_message = f"Ocurrió un error inesperado durante el OCR de la imagen: {e}"
-        # await notify_steps_to_laravel(
-        #         job_id=state["job_id"],
-        #         node_name="extract_from_single_image_node",
-        #         status="failed",
-        #         data={"error": error_message},
-        #     )
         print(f"Job [{job_id}]: {error_message}")
         return {"error": error_message}
 
@@ -253,11 +207,6 @@ async def unsupported_file_node(state: DocumentState) -> DocumentState:
 async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     print("---" + "Worker: Resumiendo y extrayendo asunto" + "---")
     step = state.get("step", "Resumiendo y extrayendo asunto")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="summarize_and_get_subject_node",
-    #             step=step
-    #         )
     
     prompt = f"""
     Este texto proviene de un sistema automatizado de gestión documental. El resumen y asunto se utilizarán para clasificar y visualizar documentos en una interfaz para personas usuarias. Sé claro y preciso.
@@ -325,11 +274,6 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
 async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Analizando sentimiento, Intención y Prioridad ---")
     step = state.get("step", "Analizando Sentimiento, Intención y Prioridad")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="sentiment_and_urgency_node",
-    #             step=step
-    #         )
 
     # Usamos el resumen y el inicio del texto para un análisis rápido y barato
     contexto_analisis = f"Asunto: {state.get('subject', '')}\nResumen: {state.get('summary', '')}\nPrimeros párrafos: {state.get('raw_text', '')[:1000]}"
@@ -386,11 +330,7 @@ async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
 async def intent_detection_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Detección de intención ---")
     step = state.get("step", "Detección de intención")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="intent_detection_node",
-    #             step=step
-    #         )
+
     contexto_analisis = f"Asunto: {state.get('subject', '')}\nResumen: {state.get('summary', '')}"
 
     prompt = f"""
@@ -428,12 +368,7 @@ async def intent_detection_node(state: DocumentState) -> DocumentState:
 async def classify_document_node(state: DocumentState) -> DocumentState:
     print("---" + "Worker: Clasificando el documento" + "---")
     step = state.get("step", "Clasificando el documento")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="classify_document_node",
-    #             step=step
-    #         )
-    
+
     # Extraemos información del estado
     subject = state.get("subject", "No disponible")
     summary = state.get("summary", "No disponible")
@@ -442,16 +377,14 @@ async def classify_document_node(state: DocumentState) -> DocumentState:
     raw_text = state.get("raw_text", "")[:8000]  # Limitar para evitar contexto muy largo
     
     prompt = f"""
-    Eres un asistente experto en clasificación documental para una entidad pública en Colombia, 
-    especializado en el Programa de Gestión Documental (PGD) y en las normas archivísticas vigentes.
+    Eres un asistente experto en gestión documental para una entidad pública colombiana. 
+    Tu tarea es identificar la **tipología documental** más apropiada para el siguiente documento, basándote en una lista predefinida y en el contenido del archivo.
 
-    ### Marco Legal y Normativo:
-    - **Ley 594 de 2000 (Ley General de Archivos)**:
-    - Art. 21: "Los documentos de archivo deben organizarse atendiendo a los principios de procedencia y orden original, respetando la estructura orgánica y funcional de la entidad productora."
-    - Art. 22: "La clasificación documental es el proceso de identificación y organización de las series documentales de acuerdo con las funciones y actividades de la entidad."
-    - **Acuerdo 060 de 2001 - Archivo General de la Nación (AGN)**:
-    - Art. 5: "El Programa de Gestión Documental (PGD) es el instrumento archivístico que desarrolla los procesos de producción, recepción, distribución, trámite, organización, consulta, conservación y disposición final de los documentos de archivo."
-    - Art. 6: "Las tipologías documentales serán definidas a partir del análisis de las series y subseries establecidas en las Tablas de Retención Documental (TRD)."
+    ### MARCO DE REFERENCIA NORMATIVO
+
+    La gestión documental en Colombia, según la Ley 594 de 2000, incluye procesos como la producción, recepción, trámite y organización de documentos. 
+    Las **tipologías documentales** son las diferentes clases de documentos que se producen o reciben (ej: informes, contratos, solicitudes). 
+    El objetivo de identificarlas correctamente es facilitar su posterior organización y aplicación de las Tablas de Retención Documental (TRD).
 
     ### Contexto del Documento a Analizar:
     Asunto: {subject}
@@ -459,25 +392,33 @@ async def classify_document_node(state: DocumentState) -> DocumentState:
     Intención detectada: {intencion_detectada}
     Texto completo (primeros 8000 caracteres): {raw_text}
 
-    ### Tipologías Documentales Disponibles (derivadas del PGD y TRD):
-    ["Acto Administrativo", "Contrato", "Informe", "Factura o Cuenta de Cobro", "Historia Laboral", 
-    "Hoja de Vida", "Solicitud", "Tutela", "Comunicación Oficial", "Documento de Identidad", 
-    "Póliza", "Certificado", "Otro"]
-
+    ### LISTA CERRADA DE TIPOLOGÍAS DOCUMENTALES:
+    - Acto Administrativo: Documento que manifiesta una decisión de la autoridad administrativa (ej: Resolución, Decreto, Circular).
+    - Contrato: Acuerdo de voluntades para crear o transmitir derechos y obligaciones.
+    - Informe: Documento que expone hechos o datos verificables sobre un asunto específico.
+    - Factura o Cuenta de Cobro: Documento comercial que indica una deuda por la venta de bienes o prestación de servicios.
+    - Historia Laboral: Expediente que reúne los documentos relacionados con la vida laboral de un funcionario.
+    - Hoja de Vida: Documento que resume la experiencia y formación de una persona.
+    - Solicitud: Documento mediante el cual se realiza una petición, queja, reclamo o consulta (Derecho de Petición).
+    - Tutela: Acción judicial para la protección de derechos fundamentales.
+    - Comunicación Oficial: Oficios, memorandos y otras comunicaciones formales entre dependencias o entidades.
+    - Póliza: Contrato de seguro.
+    - Certificado: Documento que da constancia de un hecho o cualidad.
+    - Otro: Documentos que no encajan claramente en ninguna de las categorías anteriores.
+    
+    
     ### Instrucciones:
-    1. Analiza el documento considerando las definiciones legales y archivísticas anteriores.
-    2. Asigna la tipología más precisa según la lista proporcionada (no inventes nuevas tipologías).
-    3. Basa tu clasificación en el PGD y en la TRD de la entidad.
-    4. **Validación obligatoria:**
-    - La tipología debe ser exactamente una de la lista anterior.
-    - El valor de "confianza" debe ser un número entre 0.0 y 1.0 (máximo 2 decimales).
-    - Si no es posible clasificar con certeza, asigna "Otro" con confianza ≤ 0.5.
-    5. Devuelve únicamente un objeto JSON válido.
+    1- Analiza el contexto proporcionado del documento.
+    2- Elige la tipología documental más precisa de la "LISTA CERRADA DE TIPOLOGÍAS". No puedes usar un valor que no esté en la lista.
+    3- Si el documento es una queja o un reclamo, clasifícalo como "Solicitud", ya que se enmarca en el derecho de petición.
+    4- Si tienes dudas o la información es ambigua, asigna "Otro" con una confianza baja (≤ 0.5).
+    5- Calcula tu nivel de confianza en la clasificación, siendo un número decimal entre 0.0 y 1.0.
+    6- Responde únicamente con un objeto JSON válido. No incluyas explicaciones, saludos ni texto adicional.
 
     ### Formato de Salida:
     {{
     "tipologia_documental": "Uno de los valores exactos de la lista",
-    "confianza": 0.00
+    "confianza": 0.95
     }}
     """
     try:
@@ -488,22 +429,11 @@ async def classify_document_node(state: DocumentState) -> DocumentState:
     except json.JSONDecodeError as e:
         error_message = f"Error al decodificar el JSON del LLM: {e}. Respuesta recibida: '{response.content}'"
         print(f"Job [{state['job_id']}]: {error_message}")
-        # await notify_steps_to_laravel(
-        #         job_id=state["job_id"],
-        #         node_name="classify_document_node",
-        #         status="failed",
-        #         data={"error": error_message},
-        #     )
+
         return {"error": error_message}
     except Exception as e:
         error_message = f"Error inesperado en el nodo de clasificación: {e}"
         print(f"Job [{state['job_id']}]: {error_message}")
-        # await notify_steps_to_laravel(
-        #         job_id=state["job_id"],
-        #         node_name="classify_document_node",
-        #         status="failed",
-        #         data={"error": error_message},
-        #     )
         return {"error": error_message} 
 
 
@@ -517,12 +447,7 @@ async def tag_document_node(state: DocumentState) -> DocumentState:
     subject = state.get('subject', 'N/A')
     summary = state.get('summary', 'N/A')
     step = state.get("step", "Generando etiquetas")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="tag_document_node",
-    #             step=step
-    #         )
-
+ 
     prompt = f"""
     Eres un asistente experto en análisis documental. 
     Tu tarea es generar entre 5 y 7 etiquetas únicas, claras y relevantes, basadas en el contenido de un documento.
@@ -567,12 +492,7 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
     subject = state.get("subject", "")
     summary = state.get("summary", "")
     step = state.get("step", "Extrayendo entidades clave")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="extract_entities_node",
-    #             step=step
-    #         )
-
+  
     prompt = f"""
     Eres un asistente experto en gestión documental en Colombia.
     Vas a analizar el texto de un documento clasificado como: **{classification}**.
@@ -623,12 +543,6 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         print(f"Error extrayendo entidades: {e}")
-        # await notify_steps_to_laravel(
-        #         job_id=state["job_id"],
-        #         node_name="extract_entities_node",
-        #         status="failed",
-        #         data={"error": f"Fallo en extracción de entidades: {e}"},
-        #     )
         return {
             "entities": {},
             "error": f"Fallo en extracción de entidades: {e}"
@@ -647,68 +561,62 @@ async def priority_assignment_node(state: DocumentState) -> DocumentState:
     }
 
     prompt = f"""
-Eres un asesor legal experto en derecho administrativo colombiano,
-especializado en la Ley 1755 de 2015 (Derecho de Petición) y normativas de archivo.
+        Eres un asesor legal experto en derecho administrativo colombiano, especializado en la Ley 1755 de 2015 (Derecho de Petición). 
+        Tu única tarea es analizar el siguiente documento y asignarle un nivel de prioridad y un término de respuesta legal, basándote exclusivamente en el marco normativo proporcionado.
 
-Tu tarea es asignar un **nivel de prioridad** a un documento recién radicado,
-sustentando la decisión en argumentos **legales y/o técnicos**.
+        ### MARCO LEGAL Y TÉCNICO VINCULANTE (Ley 1755 de 2015 y CPACA)
 
-### MARCO LEGAL (Ley 1755 de 2015)
+        **Términos Generales (Artículo 14, Ley 1755):**
+        1.  **Solicitud de documentos y de información:** 10 días hábiles.
+        2.  **Petición de consulta a las autoridades en relación con las materias a su cargo:** 30 días hábiles.
+        3.  **Cualquier otra petición (Regla General):** 15 días hábiles.
 
-**Artículo 14 - Término General**
-- Peticiones generales → 15 días hábiles.
-- Solicitudes de documentos/información (inciso 2) → 10 días hábiles.
-- Consultas (inciso 3) → 30 días hábiles.
+        **Atención Prioritaria (Artículo 20, Ley 1755):**
+        1.  **Peticiones para evitar un perjuicio irremediable:** Se debe dar atención prioritaria si el peticionario prueba la titularidad de un derecho fundamental y el riesgo. 
+        Medidas de urgencia se deben tomar de inmediato si está en peligro la vida o integridad. El término de respuesta sigue siendo el general (10, 15 o 30 días) pero su trámite interno debe ser preferencial.
+        2.  **Peticiones de periodistas para el ejercicio de su actividad:** Se tramitará preferencialmente. El término de respuesta sigue siendo el general.
 
-**Artículo 19 - Entre Autoridades**
-- Peticiones entre autoridades → 10 días hábiles.
+        **Peticiones entre Autoridades (Artículo 31, CPACA):**
+        1.  **Solicitudes de información entre autoridades:** 10 días hábiles.
 
-**Artículo 20 - Prioridad Absoluta**
-Atención preferente a:
-1. Acciones de tutela (horas o pocos días).
-2. Solicitudes de periodistas para su labor.
-3. Peticiones de niños, niñas y adolescentes para garantizar derechos fundamentales.
+        ### CRITERIOS DE CLASIFICACIÓN (de mayor a menor)
 
-### CRITERIOS DE PRIORIZACIÓN (de mayor a menor)
+        *   **PRIORIDAD ALTA:**
+            *   Se identifica claramente como una **solicitud de documentos o de información**.
+            *   Se identifica como una **petición entre autoridades**.
+            *   **Justificación:** Se aplica el término legal de 10 días hábiles.
 
-**PRIORIDAD CRÍTICA**
-- Acción de tutela, orden judicial o riesgo inminente para la vida/seguridad.
-- Plazo: horas o muy pocos días.
+        *   **PRIORIDAD MEDIA:**
+            *   Corresponde a una **petición general** que no es ni solicitud de información ni consulta.
+            *   Incluye quejas, reclamos, solicitudes de reconocimiento de un derecho, etc.
+            *   **Justificación:** Se aplica el término legal de 15 días hábiles.
 
-**PRIORIDAD ALTA**
-- Derecho de Petición de periodista (Art. 20).
-- Solicitud de documentos/información (Art. 14, inc. 2) → 10 días hábiles.
-- Petición de menor de edad (Art. 20).
-- Tono muy negativo + urgencia crítica.
+        *   **PRIORIDAD BAJA:**
+            *   Se identifica claramente como una **petición de consulta** (se pide un concepto o parecer sobre una materia a cargo de la entidad).
+            *   **Justificación:** Se aplica el término legal de 30 días hábiles.
 
-**PRIORIDAD MEDIA**
-- Derecho de Petición general (Art. 14) → 15 días hábiles.
-- Cuenta de cobro/factura próxima a vencer.
-- Queja o reclamo con tono negativo.
+        **NOTA SOBRE LA ATENCIÓN PRIORITARIA (Art. 20):** La ley no establece un término de respuesta *diferente* para estas peticiones, solo que su *trámite* debe ser preferencial. 
+        Por lo tanto, una petición de un periodista que solicita información se clasifica como "PRIORIDAD ALTA" con un término de 10 días, pero se debe señalar su carácter preferencial en la justificación.
 
-**PRIORIDAD BAJA**
-- Consulta general (Art. 14, inc. 3) → 30 días hábiles.
-- Documento informativo, cortesía o sin acción urgente.
+        ### DATOS DEL DOCUMENTO A EVALUAR
+        {json.dumps(contexto_completo, indent=2, ensure_ascii=False)}
 
-### DATOS DEL DOCUMENTO A EVALUAR
-{json.dumps(contexto_completo, indent=2, ensure_ascii=False)}
+        ### INSTRUCCIONES ESTRICTAS
+        1. Analiza el documento y determina el nivel de prioridad.
+        2. Sustenta la decisión con **referencia expresa** al artículo y la Ley 1755 de 2015.
+        3. Asigna un **término de respuesta sugerido** en días hábiles.
+        4. NO incluyas explicaciones fuera del JSON.
+        5. Si no encuentras información suficiente, elige el nivel más bajo posible y justifica.
 
-### INSTRUCCIONES ESTRICTAS
-1. Analiza el documento y determina el nivel de prioridad.
-2. Sustenta la decisión con **referencia expresa** al artículo y la Ley 1755 de 2015.
-3. Asigna un **término de respuesta sugerido** en días hábiles.
-4. NO incluyas explicaciones fuera del JSON.
-5. Si no encuentras información suficiente, elige el nivel más bajo posible y justifica.
+        ### FORMATO DE RESPUESTA OBLIGATORIO (JSON VÁLIDO ÚNICAMENTE)
+        {{
+        "prioridad": "Crítica | Alta | Media | Baja",
+        "justificacion_legal": "Ejemplo: 'Prioridad Alta por ser petición de documentos (Art. 14, inc. 2, Ley 1755 de 2015)'",
+        "termino_respuesta_sugerido_dias": 10
+        }}
 
-### FORMATO DE RESPUESTA OBLIGATORIO (JSON VÁLIDO ÚNICAMENTE)
-{{
-  "prioridad": "Crítica | Alta | Media | Baja",
-  "justificacion_legal": "Ejemplo: 'Prioridad Alta por ser petición de documentos (Art. 14, inc. 2, Ley 1755 de 2015)'",
-  "termino_respuesta_sugerido_dias": 10
-}}
-
-RESPONDE ÚNICAMENTE CON EL JSON SOLICITADO.
-"""
+        RESPONDE ÚNICAMENTE CON EL JSON SOLICITADO.
+        """
 
 
     try:
@@ -744,27 +652,38 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     raw_text = state.get("raw_text", "")
     entities = state.get("entities", {})
     step = state.get("step", "Analizando conformidad")
-    # await notify_steps_to_laravel(
-    #             job_id=state["job_id"],
-    #             node_name="compliance_analysis_node",
-    #             step=step
-    #         )
+
 
     criterios_radicar = """
-    Criterios mínimos que debe cumplir un documento para ser aceptado para radicación:
-
-    1. Debe contener identificación clara de las partes involucradas (personas naturales o jurídicas).
-    2. Debe tener fechas visibles y válidas (fecha de emisión, radicación, vencimiento si aplica).
-    3. El documento debe contener un número o código único de radicado o referencia.
-    4. En documentos financieros (facturas, pagos), debe tener montos claros y moneda especificada.
-    5. Debe incluir el asunto o motivo del documento.
-    6. Debe estar firmado o sellado digitalmente (si aplica según el tipo de documento).
-    7. El texto debe ser legible y sin errores graves que impidan su comprensión.
-    8. El documento debe cumplir con la normativa de conservación y autenticidad vigente.
+    Eres un experto en gestión documental y archivística colombiana, especializado en el Acuerdo 060 de 2001 del Archivo General de la Nación.
+    Tu tarea es realizar una verificación de conformidad de un documento para determinar si cumple con los requisitos mínimos para su radicación
+    
+    ### MARCO NORMATIVO DE REFERENCIA (Acuerdo 060 de 2001)
+        - **ARTÍCULO DÉCIMO:** Las comunicaciones deben ser revisadas para verificar la competencia de la entidad, los anexos, el destino, y los datos de origen (remitente, dirección, asunto).
+        - **PARÁGRAFO (ART. DÉCIMO):** Las comunicaciones anónimas (sin firma ni nombre del responsable) deben ser remitidas sin radicar a la oficina competente para que determinen las acciones a seguir.
+        - **ARTÍCULO SEGUNDO (Definición de Documento Original):** Debe poseer rasgos que garanticen su autenticidad e integridad.
+        - **ARTÍCULO NOVENO (Conservación):** El soporte y las tintas deben garantizar permanencia y durabilidad.
+        
+        
+    ### CRITERIOS DE VERIFICACIÓN PARA RADICACIÓN (Basados en la norma)
+        1.  **Datos del Remitente:** ¿El documento identifica claramente quién lo envía (nombre de persona/entidad y datos de contacto como dirección o email)?
+        2.  **Destinatario:** ¿El documento está dirigido a esta entidad o a un funcionario de la misma?
+        3.  **Asunto:** ¿El documento tiene un asunto o motivo claro que permita entender su propósito?
+        4.  **Firma y Responsable:** ¿El documento está firmado o presenta el nombre del responsable? (Según el Art. 10, si no lo tiene, se considera anónimo y su tratamiento es especial).
+        5.  **Integridad y Legibilidad:** ¿El texto es legible y el documento parece completo, sin alteraciones evidentes?
+        6.  **Anexos:** ¿Si se mencionan anexos, hay indicios de que están presentes? (La IA no puede verlos, pero puede inferir del texto).
+        
+    ###  INSTRUCCIONES ESTRICTAS:
+        1- Evalúa el documento punto por punto contra los 6 "CRITERIOS DE VERIFICACIÓN".
+        2- En el campo "comentarios", detalla el resultado de cada criterio (ej: "1. Datos del Remitente: Cumple. Se identifica a 'Juan Pérez' con email y teléfono.").
+        3- Si un criterio no cumple, explica claramente por qué (ej: "4. Firma y Responsable: No Cumple. El documento no presenta firma ni nombre del remitente, se considera anónimo.").
+        4- En el campo "cumple_normativa", pon false si alguno de los criterios 1, 2, 3 o 5 no cumple. El criterio de la firma (4) es especial y no necesariamente impide la radicación, pero debe ser señalado.
+        5- Al final de los comentarios, añade una sección de "Recomendaciones" con las acciones a seguir.
+        6- Responde únicamente con un objeto JSON válido.
+    
     """
 
     prompt = f"""
-    Eres un experto en gestión documental y normativa colombiana para radicación de documentos.
 
     Evalúa el siguiente documento según estos criterios mínimos para aceptar la radicación:
 
@@ -782,7 +701,11 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     Responde únicamente en JSON con esta estructura:
     {{
       "cumple_normativa": true | false,
-      "comentarios": "Explicación detallada."
+    "comentarios": "Verificación detallada de los 6 criterios...
+    \n\n**Recomendaciones:**
+    \n- Si es anónimo: 'Remitir sin radicar a la oficina competente para su evaluación.'
+    \n- Si falta el asunto: 'Solicitar al remitente que aclare el motivo de su comunicación.'
+    \n- Si todo está OK: 'Proceder con la radicación y registro del documento.'"
     }}
     
     NO uses bloques de código ni comillas triples. Devuelve solo el JSON sin envoltorios.
@@ -799,12 +722,6 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
 
     except Exception as e:
         print(f"Error en análisis de conformidad: {e}")
-        # await notify_steps_to_laravel(
-        #         job_id=state["job_id"],
-        #         node_name="compliance_analysis_node",
-        #         status="failed",
-        #         data={"error": f"Fallo en análisis de conformidad: {e}"},
-        #     )
         return {
             "compliance_analysis": {},
             "error": f"Fallo en análisis de conformidad: {e}"
