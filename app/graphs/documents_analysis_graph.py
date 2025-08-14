@@ -12,7 +12,10 @@ from app.graphs.nodes.documents_analysis_nodes import (
     classify_document_node,
     tag_document_node,
     extract_entities_node,
-    compliance_analysis_node
+    compliance_analysis_node,
+    intent_detection_node,
+    sentiment_and_urgency_node,
+    priority_assignment_node
     )
 from app.graphs.edges.documents_analysis_edges import (
     route_based_on_file_type
@@ -21,39 +24,29 @@ from app.schemas.graph_state import DocumentState
 
 
 
-
-
-# a. Instanciar el grafo con nuestro modelo de estado
 workflow = StateGraph(DocumentState)
 
-# b. Registrar todos los nodos con un nombre único y claro
-#    Nodo de Entrada:
 workflow.add_node("analyze_and_route", analyze_and_route_node)
 
-#    Nodos Trabajadores:
 workflow.add_node("text_pdf", extract_from_text_pdf_node)
 workflow.add_node("scanned_pdf", extract_from_scanned_pdf_node)
 workflow.add_node("image", extract_from_single_image_node)
 workflow.add_node("unsupported", unsupported_file_node)
 
 
-# --- Nueva cadena de procesamiento ---
 workflow.add_node("summarize", summarize_and_get_subject_node)
+workflow.add_node("intent_detection_node", intent_detection_node)
+workflow.add_node("sentiment_and_urgency_node", sentiment_and_urgency_node)
 workflow.add_node("classify", classify_document_node)
 workflow.add_node("tag", tag_document_node)
 workflow.add_node("extract_entities", extract_entities_node)
+workflow.add_node("priority_assignment_node", priority_assignment_node)
 workflow.add_node("analyze_compliance", compliance_analysis_node)
 
-# c. Definir el punto de entrada del grafo
 workflow.set_entry_point("analyze_and_route")
-
-# d. Crear la bifurcación condicional (El corazón de la lógica)
 workflow.add_conditional_edges(
-    # Desde el nodo de entrada...
     "analyze_and_route",
-    # ...usa nuestra función de "cartero" para decidir a dónde ir...
     route_based_on_file_type,
-    # ...y aquí está el mapa de posibles destinos.
     {
         "text_pdf": "text_pdf",
         "scanned_pdf": "scanned_pdf",
@@ -62,19 +55,19 @@ workflow.add_conditional_edges(
     }
 )
 
-# e. Conectar los finales de cada ruta al final del workflow
 workflow.add_edge("text_pdf", "summarize")
 workflow.add_edge("scanned_pdf", "summarize")
 workflow.add_edge("image", "summarize")
-workflow.add_edge("unsupported", END)
+#workflow.add_edge("unsupported", END)
 
 
-# e. Conectar la cadena de procesamiento linealmente
-workflow.add_edge("summarize", "classify")
+workflow.add_edge("summarize", "intent_detection_node")
+workflow.add_edge("intent_detection_node", "sentiment_and_urgency_node")
+workflow.add_edge("sentiment_and_urgency_node", "classify")
 workflow.add_edge("classify", "tag")
 workflow.add_edge("tag", "extract_entities")
-workflow.add_edge("extract_entities", "analyze_compliance")
+workflow.add_edge("extract_entities", "priority_assignment_node")
+workflow.add_edge("priority_assignment_node", "analyze_compliance")
 workflow.add_edge("analyze_compliance", END)
 
-# f. Compilar el grafo para hacerlo un objeto ejecutable
 app_graph = workflow.compile()

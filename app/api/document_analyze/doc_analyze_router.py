@@ -5,8 +5,6 @@ from fastapi import APIRouter, BackgroundTasks
 
 from pydantic import BaseModel, HttpUrl
 
-from ...utils.webhook_notifier import WebhookNotifier
-from ...utils.webhooks import call_webhook
 from ...utils.util import stream_download_file
 
 # Crear el router
@@ -17,6 +15,7 @@ doc_analyze_router = APIRouter(
 
 class FileUrlRequest(BaseModel):
     file_url: HttpUrl
+    document_id: int
     
 
 @doc_analyze_router.post("/analyze")
@@ -30,5 +29,6 @@ async def analyze_url(
         
         return {
         "message": "El procesamiento del documento ha comenzado.", 
-        "job_id": job_id
+        "job_id": job_id,
+        
         }
