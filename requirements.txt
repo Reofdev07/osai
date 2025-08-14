@@ -91,8 +91,6 @@ PyMuPDF==1.26.3
 pyparsing==3.2.3
 pypdf==5.9.0
 python-dotenv==1.1.1
-python-magic-bin==0.4.14
-python-magic-win64==0.4.13
 python-multipart==0.0.20
 PyYAML==6.0.2
 regex==2025.7.34
