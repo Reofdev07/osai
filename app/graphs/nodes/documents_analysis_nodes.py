@@ -484,6 +484,22 @@ async def tag_document_node(state: DocumentState) -> DocumentState:
     return {"tags": tags}
 
 
+def normalize_entities(data):
+    def normalize_list(items, keys):
+        normalized = []
+        for item in items:
+            if isinstance(item, str):
+                normalized.append({keys[0]: item, keys[1]: None})
+            elif isinstance(item, dict):
+                normalized.append(item)
+        return normalized
+
+    data["montos"] = normalize_list(data.get("montos", []), ["valor", "descripcion"])
+    data["fechas"] = normalize_list(data.get("fechas", []), ["fecha", "descripcion"])
+    data["codigos"] = normalize_list(data.get("codigos", []), ["codigo", "descripcion"])
+    data["otros"] = normalize_list(data.get("otros", []), ["dato", "descripcion"])
+    return data
+
 # --- NODO PARA LA RUTA 3: EXTRACCION DE ENTIDADES ---
 async def extract_entities_node(state: DocumentState) -> DocumentState:
     print("--- Worker: Extrayendo entidades clave del documento con contexto enriquecido ---")
@@ -493,37 +509,90 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
     summary = state.get("summary", "")
     step = state.get("step", "Extrayendo entidades clave")
   
+    # prompt = f"""
+    # Eres un asistente experto en gestión documental en Colombia.
+    # Vas a analizar el texto de un documento clasificado como: **{classification}**.
+
+    # Asunto del documento: {subject}
+    # Resumen del documento: {summary}
+
+    # Dependiendo del tipo de documento, ajusta qué tipo de entidades debes buscar.
+    # Por ejemplo:
+    # - Si es una factura: nombres de empresas, NITs, montos, fechas, número de factura.
+    # - Si es un contrato: partes involucradas, objeto, fechas, códigos contractuales.
+    # - Si es una tutela o derecho de petición: nombres de personas, entidades, fechas, pretensiones.
+    # - Si es una hoja de vida: nombre completo, cédula, correo, experiencia, educación.
+    # - Si es un informe: título, autor, fecha, entidad emisora.
+
+    # Extrae lo siguiente si está presente:
+    # - personas_naturales: nombres completos de personas
+    # - Remitente: nombre completo
+    # - Destinatario: nombre completo
+    
+    # - personas_juridicas: empresas, entidades
+    # - fechas: en formato ISO (YYYY-MM-DD)
+    # - montos: cantidades de dinero (ej. "$1.200.000", "COP 5 millones")
+    # - codigos: radicados, facturas, contratos, etc.
+    # - otros: direcciones, correos, conceptos relevantes
+
+    # Devuelve solo un JSON con esta estructura:
+    # {{
+    #   "personas_naturales": [],
+    #   "personas_juridicas": [],
+    #   "fechas": [],
+    #   "montos": [],
+    #   "codigos": [],
+    #   "otros": []
+    # }}
+
+    # ### TEXTO DEL DOCUMENTO:
+    # {state['raw_text'][:8000]}
+    
+    # NO uses bloques de código ni comillas triples. Devuelve solo el JSON sin envoltorios.
+    # """
     prompt = f"""
     Eres un asistente experto en gestión documental en Colombia.
-    Vas a analizar el texto de un documento clasificado como: **{classification}**.
+    Analiza el siguiente documento, clasificado como: **{classification}**.
 
-    Asunto del documento: {subject}
-    Resumen del documento: {summary}
+    Asunto: {subject}
+    Resumen: {summary}
 
-    Dependiendo del tipo de documento, ajusta qué tipo de entidades debes buscar.
-    Por ejemplo:
-    - Si es una factura: nombres de empresas, NITs, montos, fechas, número de factura.
-    - Si es un contrato: partes involucradas, objeto, fechas, códigos contractuales.
-    - Si es una tutela o derecho de petición: nombres de personas, entidades, fechas, pretensiones.
-    - Si es una hoja de vida: nombre completo, cédula, correo, experiencia, educación.
-    - Si es un informe: título, autor, fecha, entidad emisora.
+    ### Instrucciones:
+    1. Identifica entidades, montos, fechas, códigos y hechos relevantes.
+    2. Siempre agrega una breve descripción contextual de cada dato extraído.
+    - Ejemplo: en montos indicar si es subtotal, IVA, total, multa, reintegro, etc.
+    - En fechas indicar si corresponde a emisión, vencimiento, firma, radicación, etc.
+    - En personas o entidades indicar su rol (remitente, destinatario, empresa emisora, etc.).
+    3. Si es posible, organiza una línea de tiempo con los eventos principales (fecha + evento).
+    4. Lista hechos relevantes aunque no tengan fecha exacta.
+    5. Devuelve SOLO un JSON válido, sin texto adicional, sin bloques de código y sin comillas triples.
 
-    Extrae lo siguiente si está presente:
-    - personas_naturales: nombres completos de personas
-    - personas_juridicas: empresas, entidades
-    - fechas: en formato ISO (YYYY-MM-DD)
-    - montos: cantidades de dinero (ej. "$1.200.000", "COP 5 millones")
-    - codigos: radicados, facturas, contratos, etc.
-    - otros: direcciones, correos, conceptos relevantes
-
-    Devuelve solo un JSON con esta estructura:
+    ### Estructura de salida JSON:
     {{
-      "personas_naturales": [],
-      "personas_juridicas": [],
-      "fechas": [],
-      "montos": [],
-      "codigos": [],
-      "otros": []
+    "personas_naturales": [
+        {{"nombre": "...", "rol": "..."}}
+    ],
+    "personas_juridicas": [
+        {{"nombre": "...", "rol": "..."}}
+    ],
+    "fechas": [
+        {{"fecha": "YYYY-MM-DD", "descripcion": "..."}}
+    ],
+    "montos": [
+        {{"valor": "...", "descripcion": "..."}}
+    ],
+    "codigos": [
+        {{"codigo": "...", "descripcion": "..."}}
+    ],
+    "otros": [
+        {{"dato": "...", "descripcion": "..."}}
+    ],
+    "linea_de_tiempo": [
+        {{"fecha": "YYYY-MM-DD", "evento": "..."}}
+    ],
+    "hechos_relevantes": [
+        "..."
+    ]
     }}
 
     ### TEXTO DEL DOCUMENTO:
@@ -533,9 +602,13 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
     """
 
     try:
+        # response = llm.invoke(prompt)
+        # cleaned_content = re.sub(r"^```(?:json)?\s*|```$", "", response.content.strip(), flags=re.IGNORECASE).strip()
+        # extracted_entities = json.loads(cleaned_content)
         response = llm.invoke(prompt)
         cleaned_content = re.sub(r"^```(?:json)?\s*|```$", "", response.content.strip(), flags=re.IGNORECASE).strip()
         extracted_entities = json.loads(cleaned_content)
+        extracted_entities = normalize_entities(extracted_entities)
 
         return {
             "entities": extracted_entities
