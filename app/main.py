@@ -17,6 +17,7 @@ load_dotenv()
 
 
 from .core.config import settings
+from app.core.database import initialize_database
 from .api.base_router import base_router
 # from .db.database import engine
 # from .db.database import Base
@@ -53,6 +54,13 @@ app.add_middleware(
 
 # # Crear las tablas en la base de datos
 # Base.metadata.create_all(bind=engine)
+
+# --- INICIALIZACIÓN AUTOMÁTICA Y SEGURA ---
+# Esto se ejecuta cada vez que se inicia el servidor/worker.
+# Es seguro gracias a la idempotencia.
+print("Iniciando aplicación, verificando estado de la base de datos...")
+initialize_database()
+print("Inicialización completada. La aplicación está lista.")
 
 app.include_router(base_router)
 

@@ -2,110 +2,15 @@ import tempfile
 import httpx
 import os
 import tiktoken
-import json
+import json        
+import traceback
+
+
+from urllib.parse import urlparse
 
 
 from  ..graphs.documents_analysis_graph import app_graph
 from ..utils.notifications import notify_steps_to_laravel
-
-
-#OJO ESTE PUEDE CAMBIAR A OTRO MOUDLO
-# async def process_document_graph(file_path: str, job_id: str):
-#     """
-#     Esta función representa todo el workflow de LangGraph.
-#     Recibe la ruta al archivo y hace todo el trabajo.
-#     """
-#     print(f"⚙️ Grafo [Job {job_id}]: Iniciando procesamiento para el archivo {file_path}")
-
-#     initial_state = {
-#         "job_id": job_id, 
-#         "file_path": file_path,
-#         'file_type': None,                
-#         'raw_text': None,       
-#         'pages': None,  
-#         'classification': None,
-#         'summary': None,
-#         'entities': None,
-#         'tags': None,
-#         'tasks_requested': [],
-#         'current_step': None,
-#         'errors': [],
-#         'webhook_sent': False
-#     }
-
-#     final_state = None
-#     async for step in app_graph.astream(initial_state):
-#         step_name = list(step.keys())[0]
-#         print(f"Job [{job_id}]: Estado final del nodo '{step_name}' recibido.")
-#         final_state = step
-        
-#         # await notify_steps_to_laravel(
-#         #     job_id=job_id,
-#         #     node_name="graph_process",
-#         #     status="finished",
-#         #     data=final_state
-#         # )
-
-#     print(f"Job [{job_id}]: Proceso del grafo completado. Estado final: {final_state}")
-    
-#     # final_state = await app_graph.ainvoke(initial_state)
-    
-#     # print("\n--- ✅ Grafo Finalizado ---")
-#     # print("Estado final del workflow:")
-#     # print(final_state)
-
-# async def process_document_graph(file_path: str, job_id: str):
-#     """
-#     Función que transmite el progreso y devuelve el estado final completo.
-#     """
-#     print(f"⚙️ Grafo [Job {job_id}]: Iniciando procesamiento...")
-
-#     initial_state = {
-#         "job_id": job_id, 
-#         "file_path": file_path,
-#         'file_type': None,                
-#         'raw_text': None,       
-#         'pages': None,  
-#         'classification': None,
-#         'summary': None,
-#         'sentiment_analysis': None,
-#         'intent_analysis': None,
-#         'priority_analysis': None,
-#         'compliance_analysis': None,
-#         'entities': None,
-#         'tags': None,
-#         'tasks_requested': [],
-#         'current_step': None,
-#         'errors': [],
-#         'webhook_sent': False,
-#         'step': None
-#     }
-
-#     # Usaremos una variable para acumular el estado
-#     accumulated_state = initial_state.copy()
-
-#     # Iteramos con astream para el progreso en tiempo real
-#     async for step in app_graph.astream(initial_state):
-#         step_name = list(step.keys())[0]
-#         step_output = step[step_name]
-
-#         print(f"Job [{job_id}]: Progreso -> Nodo '{step_name}' completado.")
-
-#         # Actualizamos nuestro estado acumulado
-#         accumulated_state.update(step_output)
-
-#         # Puedes seguir notificando a Laravel aquí con el estado parcial si quieres
-#         # await notify_steps_to_laravel(...)
-
-#     # Al final del bucle, 'accumulated_state' tiene todo.
-#     final_state = accumulated_state
-
-#     print(f"✅ Job [{job_id}]: Proceso del grafo completado.")
-#     print("--- ESTADO FINAL CONSOLIDADO ---")
-#     print(json.dumps(final_state, indent=2, ensure_ascii=False))
-#     print("---------------------------------")
-
-#     return final_state
 
 
 # En tu archivo principal (donde llamas al grafo)
@@ -178,48 +83,108 @@ async def process_document_graph(file_path: str, job_id: str):
     return final_state
     
 
+# async def stream_download_file(url: str, job_id: str):
+#     """
+#       Downloads a file from a URL and saves it to a temporary location.
+#       Returns the path to the downloaded file.
+#     """
+    
+#     temp_dir = tempfile.gettempdir()
+#     temp_file_path = os.path.join(temp_dir, f"{job_id}.tmp")    
+#     try:
+#       # --- PARTE 1: DESCARGA COMPLETA ---
+#         async with httpx.AsyncClient() as client:
+#             async with client.stream("GET", str(url)) as response:
+#                 response.raise_for_status()
+                
+#                 # Abrimos el archivo una sola vez
+#                 with open(temp_file_path, "wb") as f:
+#                     # El bucle SOLO se encarga de escribir en el disco
+#                     async for chunk in response.aiter_bytes():
+#                         f.write(chunk)
+        
+#         # Esta línea se ejecuta DESPUÉS de que el bucle anterior haya terminado
+#         print(f"📥 Job [{job_id}]: Descarga completada. El archivo está listo en {temp_file_path}")
+
+#         # --- PARTE 2: PROCESAMIENTO (UNA SOLA VEZ) ---
+#         # Ahora que el archivo está completo, llamamos al grafo UNA vez.
+#         await process_document_graph(file_path=temp_file_path, job_id=job_id)
+
+#     except Exception as e:
+#         print(f"❌ ERROR en Job [{job_id}]: {e}")
+    
+#     finally:
+#         # --- PARTE 3: LIMPIEZA (SIEMPRE AL FINAL) ---
+#         print(f"🧹 Limpieza [Job {job_id}]: Intentando eliminar el archivo temporal.") 
+#         if os.path.exists(temp_file_path):
+#             os.remove(temp_file_path)
+#             print(f"🗑️ Limpieza [Job {job_id}]: Archivo eliminado exitosamente.")
+#         else:
+#             print(f"🤔 Limpieza [Job {job_id}]: El archivo no se encontró para eliminar.")
+               
+# Asegúrate de tener este import al principio de tu archivo
+from urllib.parse import urlparse
+
 async def stream_download_file(url: str, job_id: str):
     """
-      Downloads a file from a URL and saves it to a temporary location.
-      Returns the path to the downloaded file.
+      Downloads a file, SAVING IT WITH ITS CLEANED ORIGINAL EXTENSION,
+      and then processes it with the graph.
     """
     
-    temp_dir = tempfile.gettempdir()
-    temp_file_path = os.path.join(temp_dir, f"{job_id}.tmp")    
+    temp_file_path = None
+    
     try:
-      # --- PARTE 1: DESCARGA COMPLETA ---
+
+        # --- PARTE 1: DETERMINAR LA EXTENSIÓN LIMPIA Y PREPARAR LA RUTA ---
+        
+        try:
+            # 1. Parsear la URL para separar sus componentes.
+            parsed_url = urlparse(str(url))
+            
+            # 2. Obtener solo la RUTA de la URL, ignorando los parámetros de consulta.
+            #    Ej: '/uploads/mi_contrato.pdf'
+            clean_path = parsed_url.path
+            
+            # 3. Extraer la extensión del nombre de archivo limpio.
+            _, file_extension = os.path.splitext(os.path.basename(clean_path))
+            
+            if not file_extension:
+                raise ValueError("La ruta de la URL no contiene una extensión de archivo válida.")
+        
+        except ValueError as e:
+            print(f"❌ ERROR [Job {job_id}]: {e}. Abortando.")
+            return
+
+        # Crear una ruta de archivo temporal SEGURA y CON la extensión correcta.
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+            temp_file_path = temp_file.name
+
+        print(f"📥 Job [{job_id}]: Se usará el archivo temporal: {temp_file_path}")
+
+        # --- PARTE 2: DESCARGA COMPLETA (sin cambios) ---
         async with httpx.AsyncClient() as client:
-            async with client.stream("GET", str(url)) as response:
+            async with client.stream("GET", str(url), follow_redirects=True, timeout=60.0) as response:
                 response.raise_for_status()
                 
-                # Abrimos el archivo una sola vez
                 with open(temp_file_path, "wb") as f:
-                    # El bucle SOLO se encarga de escribir en el disco
                     async for chunk in response.aiter_bytes():
                         f.write(chunk)
         
-        # Esta línea se ejecuta DESPUÉS de que el bucle anterior haya terminado
         print(f"📥 Job [{job_id}]: Descarga completada. El archivo está listo en {temp_file_path}")
 
-        # --- PARTE 2: PROCESAMIENTO (UNA SOLA VEZ) ---
-        # Ahora que el archivo está completo, llamamos al grafo UNA vez.
+        # --- PARTE 3: PROCESAMIENTO (sin cambios) ---
         await process_document_graph(file_path=temp_file_path, job_id=job_id)
 
     except Exception as e:
         print(f"❌ ERROR en Job [{job_id}]: {e}")
+        import traceback
+        traceback.print_exc()
     
     finally:
-        # --- PARTE 3: LIMPIEZA (SIEMPRE AL FINAL) ---
+        # --- PARTE 4: LIMPIEZA (sin cambios) ---
         print(f"🧹 Limpieza [Job {job_id}]: Intentando eliminar el archivo temporal.") 
-        if os.path.exists(temp_file_path):
+        if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
             print(f"🗑️ Limpieza [Job {job_id}]: Archivo eliminado exitosamente.")
         else:
-            print(f"🤔 Limpieza [Job {job_id}]: El archivo no se encontró para eliminar.")
-               
-    
-
-
- 
-    
-    
+            print(f"🤔 Limpieza [Job {job_id}]: El archivo no se encontró para eliminar o nunca se creó.")
