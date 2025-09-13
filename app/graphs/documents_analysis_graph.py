@@ -1,73 +1,119 @@
+from langgraph.graph import StateGraph, END
+from app.schemas.graph_state import DocumentState
 
-from langgraph.graph import StateGraph,  END
+# --- 1. Importa todos los componentes necesarios ---
 
-from app.graphs.nodes.documents_analysis_nodes import ( 
-    unsupported_file_node,
+# Importa todos los nodos que definimos en el archivo anterior.
+# ¡Asegúrate de que los nombres coincidan exactamente!
+from app.graphs.nodes.documents_analysis_nodes import (
     analyze_and_route_node,
-    analyze_and_route_node,
-    extract_from_scanned_pdf_node,
-    extract_from_single_image_node,
     extract_from_text_pdf_node,
+    count_pages_node,
+    adaptive_ocr_orchestrator_node,
+    extract_with_google_vision_node,
+    extract_with_llama_parse_node,
+    update_llama_parse_usage_node,
+    unsupported_file_node,
     summarize_and_get_subject_node,
+    intent_detection_node,
+    sentiment_and_urgency_node,
     classify_document_node,
     tag_document_node,
     extract_entities_node,
-    compliance_analysis_node,
-    intent_detection_node,
-    sentiment_and_urgency_node,
-    priority_assignment_node
-    )
-from app.graphs.edges.documents_analysis_edges import (
-    route_based_on_file_type
+    priority_assignment_node,
+    compliance_analysis_node
 )
-from app.schemas.graph_state import DocumentState
 
+# Importa la función de enrutamiento del archivo de edges.
+from app.graphs.edges.documents_analysis_edges import route_based_on_file_type
 
-
+# --- 2. Construcción del Grafo ---
+print("Construyendo el grafo de procesamiento de documentos...")
 workflow = StateGraph(DocumentState)
 
+# --- Añadir todos los nodos al grafo ---
+# Nodos de entrada y orquestación
 workflow.add_node("analyze_and_route", analyze_and_route_node)
+workflow.add_node("count_pages", count_pages_node)
+workflow.add_node("orchestrate_ocr", adaptive_ocr_orchestrator_node)
 
+# Nodos de extracción de texto
 workflow.add_node("text_pdf", extract_from_text_pdf_node)
-workflow.add_node("scanned_pdf", extract_from_scanned_pdf_node)
-workflow.add_node("image", extract_from_single_image_node)
-workflow.add_node("unsupported", unsupported_file_node)
+workflow.add_node("google_vision", extract_with_google_vision_node)
+workflow.add_node("llama_parse", extract_with_llama_parse_node)
+workflow.add_node("update_usage_counter", update_llama_parse_usage_node)
 
-
+# Nodos de análisis de contenido
 workflow.add_node("summarize", summarize_and_get_subject_node)
-workflow.add_node("intent_detection_node", intent_detection_node)
-workflow.add_node("sentiment_and_urgency_node", sentiment_and_urgency_node)
+workflow.add_node("intent_detection", intent_detection_node)
+workflow.add_node("sentiment_and_urgency", sentiment_and_urgency_node)
 workflow.add_node("classify", classify_document_node)
 workflow.add_node("tag", tag_document_node)
 workflow.add_node("extract_entities", extract_entities_node)
-workflow.add_node("priority_assignment_node", priority_assignment_node)
-workflow.add_node("analyze_compliance", compliance_analysis_node)
+workflow.add_node("priority_assignment", priority_assignment_node)
+workflow.add_node("compliance_analysis", compliance_analysis_node)
 
+# Nodos finales
+workflow.add_node("unsupported", unsupported_file_node)
+
+# --- 3. Definir las conexiones (el flujo lógico) ---
+
+# Punto de entrada del grafo
 workflow.set_entry_point("analyze_and_route")
+
+# Decisión 1: ¿El archivo necesita OCR?
 workflow.add_conditional_edges(
     "analyze_and_route",
     route_based_on_file_type,
     {
-        "text_pdf": "text_pdf",
-        "scanned_pdf": "scanned_pdf",
-        "image": "image",
-        "unsupported": END
+        "pdf_text": "text_pdf",
+        "pdf_scanned": "count_pages",
+        "image": "count_pages",
+        "unsupported": "unsupported"
     }
 )
 
+# La ruta de OCR sigue un sub-flujo para decidir el proveedor
+workflow.add_edge("count_pages", "orchestrate_ocr")
+
+# Decisión 2: ¿Qué proveedor de OCR usar (decidido por el orquestador)?
+def route_after_orchestration(state: DocumentState):
+    provider = state.get("ocr_provider")
+    print(f"--- Edge (Orchestration): Dirigiendo a '{provider}' ---")
+    return provider
+
+workflow.add_conditional_edges(
+    "orchestrate_ocr",
+    route_after_orchestration,
+    {
+        "llama_parse": "llama_parse",
+        "google_vision": "google_vision"
+    }
+)
+
+# La ruta de LlamaParse tiene un paso extra: actualizar el contador
+workflow.add_edge("llama_parse", "update_usage_counter")
+
+# Unificar todas las rutas de extracción para que converjan en el primer paso de análisis
 workflow.add_edge("text_pdf", "summarize")
-workflow.add_edge("scanned_pdf", "summarize")
-workflow.add_edge("image", "summarize")
-#workflow.add_edge("unsupported", END)
+workflow.add_edge("google_vision", "summarize")
+workflow.add_edge("update_usage_counter", "summarize")
 
-
-workflow.add_edge("summarize", "intent_detection_node")
-workflow.add_edge("intent_detection_node", "sentiment_and_urgency_node")
-workflow.add_edge("sentiment_and_urgency_node", "classify")
+# La cadena de análisis principal, un nodo lleva al siguiente
+workflow.add_edge("summarize", "intent_detection")
+workflow.add_edge("intent_detection", "sentiment_and_urgency")
+workflow.add_edge("sentiment_and_urgency", "classify")
 workflow.add_edge("classify", "tag")
 workflow.add_edge("tag", "extract_entities")
-workflow.add_edge("extract_entities", "priority_assignment_node")
-workflow.add_edge("priority_assignment_node", "analyze_compliance")
-workflow.add_edge("analyze_compliance", END)
+workflow.add_edge("extract_entities", "priority_assignment")
+workflow.add_edge("priority_assignment", "compliance_analysis")
 
+# Definir los puntos finales del grafo
+workflow.add_edge("compliance_analysis", END) # Final exitoso
+workflow.add_edge("unsupported", END)         # Final para archivos no soportados
+
+# --- 4. Compilar el grafo ---
+# Este es el objeto final que usarás para ejecutar tus trabajos.
 app_graph = workflow.compile()
+
+print("Grafo de procesamiento de documentos compilado y listo.")

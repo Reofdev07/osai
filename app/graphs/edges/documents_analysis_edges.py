@@ -1,34 +1,23 @@
-from typing import Literal
-
 from app.schemas.graph_state import DocumentState
 
-def decide_extraction_path(state: DocumentState) -> Literal["extract_pdf", "extract_image", "unsupported_end"]:
+def route_based_on_file_type(state: DocumentState) -> str:
     """
-    Esta función lee el estado y decide cuál es el siguiente nodo a ejecutar.
+    Lee la clave 'file_type' del estado y la devuelve para el enrutamiento.
+    Esta es la forma más directa y recomendada para las decisiones condicionales.
     """
-    if state.get("error"):
-        return "unsupported_end"
-        
-    file_type = state["file_type"]
-    if file_type == "pdf":
-        return "extract_pdf"
+    file_type = state.get("file_type")
+    
+    # Este log es crucial para la depuración. Te dirá exactamente qué valor se está usando para la decisión.
+    print(f"--- Edge (Routing): Decidiendo ruta basada en file_type = '{file_type}' ---")
+    
+    # Lista de rutas válidas que el grafo conoce.
+    valid_routes = ["pdf_text", "pdf_scanned", "image", "unsupported"]
+    
+    if file_type in valid_routes:
+        # Devuelve el valor directamente. El diccionario del grafo hará el mapeo al nodo correcto.
+        return file_type
     else:
-        return "extract_image"
-
-
-
-def route_based_on_file_type(state: DocumentState) -> Literal["text_pdf", "scanned_pdf", "image", "unsupported"]:
-    """
-    Lee el tipo de archivo del estado y devuelve el nombre de la siguiente ruta.
-    """
-    file_type = state["file_type"]
-
-    # Mapeamos los tipos de estado a los nombres de los nodos que usaremos en el grafo
-    if file_type == "pdf_text":
-        return "text_pdf"
-    elif file_type == "pdf_scanned":
-        return "scanned_pdf"
-    elif file_type == "image":
-        return "image"
-    else:
+        # Si por alguna razón file_type es None o un valor inesperado,
+        # lo desviamos de forma segura a la ruta 'unsupported'.
+        print(f"--- Edge (Routing): ADVERTENCIA - file_type '{file_type}' no es una ruta válida. Desviando a 'unsupported'. ---")
         return "unsupported"

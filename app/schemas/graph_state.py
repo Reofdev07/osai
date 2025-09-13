@@ -13,6 +13,9 @@ class DocumentState(TypedDict):
     token_count: int | None  # Para contar tokens del contenido final
     step: str | None
     
+    ocr_provider: Optional[str] | None # google_vision, llama_parse
+    ocr_provider_decision: Optional[str] | None # llama_parse, google_vision
+    
     
     # Análisis IA
     summary: Optional[str]          # Resumen generado

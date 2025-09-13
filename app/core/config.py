@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY")
     
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    
+    LLAMA_CLOUD_API_KEY: str = os.getenv("LLAMA_CLOUD_API_KEY")
         
     class Config:
         # Carga primero el .env y luego el específico del entorno.
