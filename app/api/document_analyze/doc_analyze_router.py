@@ -1,7 +1,9 @@
 
 import uuid
+import asyncio
 
 from fastapi import APIRouter, BackgroundTasks
+from fastapi.responses import StreamingResponse
 
 from pydantic import BaseModel, HttpUrl
 
@@ -32,3 +34,27 @@ async def analyze_url(
         "job_id": job_id,
         
         }
+
+
+async def fake_llm_responder(context: str):
+    """
+    Simulador de un LLM generando una respuesta token por token.
+    En el futuro, aquí iría la llamada real a OpenAI, Anthropic, etc.
+    """
+    prompt = f"Basado en el contexto '{context}', redacta una breve justificación para el historial del expediente."
+    
+    # Simulación de respuesta
+    response_text = f"Se ha completado la acción correspondiente a: '{context}'. El proceso avanza a la siguiente etapa."
+    
+    for word in response_text.split():
+        yield word + " "
+        await asyncio.sleep(0.1) # Simula el tiempo de generación de cada token
+
+
+
+
+@doc_analyze_router.post("/generate-summary-stream")
+async def generate_summary_stream(payload: dict):
+    # En una implementación real, 'payload' contendría todo el contexto del caso.
+    task_description = payload.get("task_description", "Tarea no especificada")
+    return StreamingResponse(fake_llm_responder(task_description))
