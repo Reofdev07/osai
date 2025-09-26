@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, HttpUrl
 
 from ...utils.util import stream_download_file
+from ...agents.basic_response_agent import basic_response_agent
 
 # Crear el router
 doc_analyze_router = APIRouter(
@@ -57,4 +58,4 @@ async def fake_llm_responder(context: str):
 async def generate_summary_stream(payload: dict):
     # En una implementación real, 'payload' contendría todo el contexto del caso.
     task_description = payload.get("task_description", "Tarea no especificada")
-    return StreamingResponse(fake_llm_responder(task_description))
+    return StreamingResponse(basic_response_agent(task_description))
