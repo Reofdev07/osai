@@ -8,7 +8,7 @@ from app.core.llm import create_llm
 llm = create_llm()
 
 
-async def basic_response_agent(task_description: str):
+async def basic_response_agent(context_payload: dict):
     """
      this function is a basic response agent that uses a LLM to generate a response to a task description.
      
@@ -20,27 +20,47 @@ async def basic_response_agent(task_description: str):
     """
 
     try:
+
+        task_desc = context_payload.get('task_description', 'N/A')
+        doc_subject = context_payload.get('document_subject', 'N/A')
+        doc_summary = context_payload.get('document_summary', 'N/A')
+        doc_intent = context_payload.get('document_intent', 'N/A')
+        doc_facts = "\n- ".join(context_payload.get('document_facts', []))
+
+        system_prompt = """
+        Eres un asistente de sistema para un software de gestión documental. 
+        Tu única función es redactar una nota breve, formal y contextual de cierre para una tarea completada. 
+
+        Reglas de redacción:
+        - Usa siempre voz pasiva o tercera persona.  
+        - El texto debe ser conciso, directo y formal.  
+        - No incluyas saludos, introducciones ni explicaciones adicionales.  
+        - La nota debe relacionar explícitamente la tarea realizada con el contexto del expediente.  
+        - La extensión máxima es de 1 a 2 oraciones.  
+        - Evita repetir literalmente el contexto: resume de forma precisa.  
+        """
+
+        user_prompt = f"""
+        **Contexto del Expediente:**
+        - Asunto: {doc_subject}
+        - Resumen: {doc_summary}
+        - Intención del Documento: {doc_intent}
+        - Hechos Clave:
+        - {doc_facts}
+
+        **Tarea Completada:**
+        {task_desc}
+
+        **Instrucción:**
+        Redacta la nota de cierre de la tarea finalizada basándote únicamente en la información anterior. 
+        La respuesta debe ser una sola nota breve que describa formalmente la acción completada en relación con el expediente.
+        """
+
+
         # Creamos el prompt de LangChain
         prompt = [
-            SystemMessage(
-                content="""
-                Actúa como un asistente integrado en un software de gestión documental. 
-                Tu única función es redactar una nota breve y formal de cierre para una tarea completada.  
-
-                Reglas:
-                - Usa voz pasiva o tercera persona.  
-                - El texto debe ser conciso, directo y formal.  
-                - No incluyas saludos, introducciones ni explicaciones.  
-                - La nota debe reflejar explícitamente la tarea realizada, mencionando el documento, acción o proceso asociado.  
-                - Extensión máxima: 1 a 2 oraciones.  
-
-                Ejemplo de estilo esperado:
-                - "El contrato fue revisado, validado y archivado en la carpeta correspondiente."  
-                - "La solicitud de acceso fue registrada, tramitada y cerrada en el sistema."  
-                - "El informe financiero quedó aprobado y vinculado al expediente institucional."
-                """            
-            ),
-            HumanMessage(content=f"La tarea completada es: '{task_description}'.")
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
         ]
 
         # Usamos el método .astream() del modelo de LangChain para obtener un generador asíncrono

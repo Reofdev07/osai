@@ -53,9 +53,11 @@ async def fake_llm_responder(context: str):
 
 
 
-
 @doc_analyze_router.post("/generate-summary-stream")
 async def generate_summary_stream(payload: dict):
-    # En una implementación real, 'payload' contendría todo el contexto del caso.
-    task_description = payload.get("task_description", "Tarea no especificada")
-    return StreamingResponse(basic_response_agent(task_description))
+    """
+    this function is a basic response agent that uses a LLM to generate a response to a task description.
+    """
+    # Pasamos el objeto 'payload' completo, que contiene todo el contexto,
+    # directamente a nuestro agente.
+    return StreamingResponse(basic_response_agent(payload))
