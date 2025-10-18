@@ -6,11 +6,11 @@ services:
     branch: DockerAndDespleig
     dockerfilePath: ./Dockerfile
     healthCheckPath: /info
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.11"
-      - fromGroup: osai-secrets
     disks:
       - name: osai-data
         mountPath: /app/data
         sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - fromGroup: osai-secrets
