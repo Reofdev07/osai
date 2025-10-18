@@ -1,0 +1,44 @@
+# render.yaml - Infraestructura como Código para Render
+# Visita https://render.com/docs/blueprint-spec para la documentación completa
+
+services:
+  # --- Servicio Web Principal para la API de OSAI ---
+  - type: web
+    name: osai-app
+    # Entorno de ejecución: Docker
+    env: docker
+    # Repositorio (Render lo detecta automáticamente, pero es buena práctica especificarlo)
+    # repo: https://github.com/TU_USUARIO/TU_REPOSITORIO
+    # Rama a desplegar
+    branch: DockerAndDespleig
+    # Plan de instancia. 'Starter' es bueno para empezar. 'Standard' o superior para producción.
+    plan: starter
+    # Ruta al Dockerfile
+    dockerfilePath: ./Dockerfile
+    # Health Check: Render usará este endpoint para verificar que tu app está saludable
+    healthCheckPath: /info
+
+    # --- Variables de Entorno ---
+    # Las variables se cargarán desde el Secret Manager de Render.
+    # Debes crear un nuevo "Secret File" en Render y pegar el contenido de tu .env.prododuction
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11 # Asegura que Render use la versión correcta
+      # Carga las variables desde un archivo de secretos que crearás en el dashboard de Render
+      - fromGroup: osai-secrets
+
+    # --- Disco Persistente para la Base de Datos SQLite ---
+    # Esto es CRÍTICO para que tu base de datos no se borre en cada despliegue.
+    disks:
+      - name: osai-data
+        mountPath: /app/data
+        sizeGB: 1 # 1 GB es un buen punto de partida
+
+# --- Grupo de Secretos (Variables de Entorno) ---
+# Define un grupo de secretos que puedes gestionar desde el dashboard de Render.
+# Ve a Blueprints -> Secret Groups en Render y crea un grupo llamado 'osai-secrets'.
+# Luego, añade cada una de las claves de tu .env.prododuction como una variable individual.
+# Por ejemplo:
+# Key: FASTAPI_ENV, Value: production
+# Key: OPENAI_API_KEY, Value: sk-.... (tu clave real)
+# etc.
