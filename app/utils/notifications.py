@@ -54,6 +54,7 @@ async def notify_steps_to_laravel(
             response = await client.post(webhook_url, data=request_body, headers=headers)
             response.raise_for_status()  # Lanza error para respuestas 4xx/5xx
             print(f"Response: {response.raise_for_status()}")
+            print(f"Response: {response.text}")
             return True
         except httpx.HTTPStatusError as e:
             print(f"Error de estado al notificar a Laravel para el job {job_id}: {e.response.status_code} - {e.response.text}")
