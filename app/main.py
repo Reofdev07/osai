@@ -40,6 +40,7 @@ Follow these steps to register a new user and authenticate them successfully. Ex
 
 # Configuración de CORS: restringir a los orígenes permitidos en producción
 origins = [
+    "*",
     "http://127.0.0.1:8000/",
     # "http://18.189.100.75",
 ]
