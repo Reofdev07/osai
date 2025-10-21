@@ -27,6 +27,7 @@ async def notify_steps_to_laravel(
     """
     
     webhook_url = settings.WEBHOOK_URL
+    print(f"webhook_url: {webhook_url}")
     
     payload = {
         "job_id": job_id,
@@ -52,6 +53,7 @@ async def notify_steps_to_laravel(
             print(f"Job [{job_id}]: Notificando a Laravel -> Nodo: {node_name}, Estado: {status}")
             response = await client.post(webhook_url, data=request_body, headers=headers)
             response.raise_for_status()  # Lanza error para respuestas 4xx/5xx
+            print(f"Response: {response.raise_for_status()}")
             return True
         except httpx.HTTPStatusError as e:
             print(f"Error de estado al notificar a Laravel para el job {job_id}: {e.response.status_code} - {e.response.text}")
