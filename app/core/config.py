@@ -34,9 +34,13 @@ class Settings(BaseSettings):
 class DevelopmentSettings(Settings):
     # Los valores específicos se pueden quedar aquí si son fijos
     # O se pueden mover al .env.development
-    AI_MODEL: str = "gemini-2.0-flash"
-    AI_PROVIDER: str = "google"
-    GOOGLE_API_KEY: str
+    # AI_MODEL: str = "gemini-2.0-flash"
+    # AI_PROVIDER: str = "google"
+    # GOOGLE_API_KEY: str
+
+    #COHERE
+    # AI_MODEL:str = os.getenv("COHERE_MODEL")
+    # AI_PROVIDER:str = os.getenv("AI_PROVIDER")
     
     # Bucket
     BUCKET_NAME: str

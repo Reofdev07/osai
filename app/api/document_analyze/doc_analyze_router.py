@@ -135,10 +135,11 @@ async def stream_generator(full_payload: dict):
 
     # Añadimos el historial de chat, convirtiéndolo al formato de LangChain
     for msg in full_payload.get('messages', []):
+        content = msg.get('content') or ""
         if msg['role'] == 'user':
-            messages_for_llm.append(HumanMessage(content=msg['content']))
+            messages_for_llm.append(HumanMessage(content=content))
         elif msg['role'] == 'assistant':
-            messages_for_llm.append(AIMessage(content=msg['content']))
+            messages_for_llm.append(AIMessage(content=content))
             
     # 4. Llamamos al LLM con el contexto completo (System Prompt + Historial)
     response_stream = llm.astream(messages_for_llm)

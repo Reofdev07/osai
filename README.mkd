@@ -72,7 +72,7 @@ Para instalar el proyecto, sigue los siguientes pasos:
 3. Ejecutar el comando `pip install -r requirements.txt`.
 4. Ejecutar el comando `uvicorn main:app --reload` o `uvicorn app.main:app --reload --port 8001`. para producción = ENVIRONMENT=production uvicorn app.main:app --reload --port 8001`.
 5. Abrir una nueva terminal y ejecutar el comando `python main.py`.
-6. Abrir un navegador web y ingresar la URL `http://127.0.0.1:8000/docs`.
+6. Abrir un navegador web y ingresar la URL `http://127.0.0.1:8001/docs`.
 7. ¡Ya está! 🎉
 
 ## Contribuciones
