@@ -19,6 +19,10 @@ def create_llm():
     """
     # nota add **kwargs de ser necesario
     # para pasar más parámetros al modelo
+    # return init_chat_model(
+    #     settings.AI_MODEL, model_provider=settings.AI_PROVIDER
+    # )
     return init_chat_model(
-        settings.AI_MODEL, model_provider=settings.AI_PROVIDER
+        model="command-r-08-2024", 
+        model_provider="cohere",
     )
