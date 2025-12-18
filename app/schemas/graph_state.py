@@ -20,12 +20,13 @@ class DocumentState(TypedDict):
     # Análisis IA
     summary: Optional[str]          # Resumen generado
     subject: Optional[str]           # Asunto generado
+    document_date: Optional[str]     # Fecha del documento
     sentiment_analysis: Optional[Dict]  # Análisis de sentimiento e intención
     intent_analysis: Optional[Dict]  # Análisis de intención
     priority_analysis: Optional[Dict]  # Análisis de prioridad
     classification: Optional[Dict]   # Tipo de documento
     tags: Optional[List[str]]       # Tags generados
-    entities: Optional[List[Dict]]  # Entidades extraídas
+    entities: Optional[Dict]        # Entidades extraídas
     compliance_analysis: Optional[Dict]  # Análisis de cumplimiento
     
     # Control de flujo

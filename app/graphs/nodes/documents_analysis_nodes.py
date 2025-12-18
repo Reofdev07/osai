@@ -17,9 +17,14 @@ from llama_index.core import SimpleDirectoryReader
 # --- Imports de tu propio proyecto ---
 from app.schemas.graph_state import DocumentState
 from app.utils.token_counter import count_tokens
+from app.utils.toon_helper import get_toon_context
 from app.core.llm import create_llm
 from app.core.config import settings
 from app.core.database import DB_FILE  # Importa la ruta centralizada de la DB
+from app.schemas.agent_schemas import (
+    ExtractionSummary, IntentAnalysis, SentimentUrgency, 
+    ClassificationOutput, EntitiesOutput, PriorityOutput, ComplianceOutput, TagsOutput
+)
 
 # --- CONFIGURACIÓN GLOBAL PARA LOS NODOS ---
 LLAMA_PARSE_FREE_LIMIT_WEEKLY = 7000
@@ -257,375 +262,165 @@ async def unsupported_file_node(state: DocumentState) -> DocumentState:
 # === NODOS DE ANÁLISIS DE CONTENIDO (TUS PROMPTS ORIGINALES) ===
 
 async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
-    print("--- Worker: Resumiendo y extrayendo asunto ---")
+    print("--- Worker (Expert): Resumo, Asunto y Fecha ---")
     if not state.get("raw_text", "").strip(): return {"error": "No hay texto para analizar."}
-    prompt = f"""
-    Este texto proviene de un sistema automatizado de gestión documental. El resumen y asunto se utilizarán para clasificar y visualizar documentos en una interfaz para personas usuarias. Sé claro y preciso.
-
-    ### INSTRUCCIONES ###
-    1. Resume el contenido del documento en español en un máximo de 3 a 4 oraciones.
-    2. Luego, redacta un "asunto" o título corto que describa claramente de qué trata el documento.
-
-    ### FORMATO DE RESPUESTA ###
-    Devuelve solo un JSON con estas claves:
-    - "resumen": string
-    - "asunto": string
-
-    ### EJEMPLO ###
-    TEXTO DE ENTRADA:
-    El presente documento establece los términos del contrato de arrendamiento entre Juan Pérez y María Rodríguez, sobre el apartamento ubicado en la Calle 123 de Bogotá...
-
-    RESPUESTA:
-    {{
-    "resumen": "El documento es un contrato de arrendamiento entre dos partes para una propiedad ubicada en Bogotá, con una duración de 12 meses.",
-    "asunto": "Contrato de Arrendamiento - Propiedad en Bogotá"
-    }}
-
-    ### TEXTO DEL DOCUMENTO ###
-    {state['raw_text'][:8000]}
     
-    NO uses bloques de código ni comillas triples. Devuelve solo el JSON sin envoltorios.
+    prompt = f"""
+    Act as a professional archivist expert in Colombian documents.
+    1. Summarize the following document accurately in Spanish (3-4 sentences).
+    2. Extract a clear, formal subject title.
+    3. Identify the document date (the date of issuance as written in the text, e.g., 'Octubre 2025' or 'Octubre 1 de 2025'). 
+    
+    TEXT:
+    {state['raw_text'][:8000]}
     """
     try:
-        response = await llm.ainvoke(prompt)
-        cleaned_content = re.sub(r"^```(?:json)?\s*|\s*```$", "", response.content.strip(), flags=re.DOTALL)
-        data = json.loads(cleaned_content)
-        return {"summary": data.get("resumen"), "subject": data.get("asunto")}
+        data = await llm.with_structured_output(ExtractionSummary).ainvoke(prompt)
+        return {
+            "summary": data.resumen, 
+            "subject": data.asunto,
+            "document_date": data.fecha
+        }
     except Exception as e:
-        return {"error": f"Error en nodo de resumen: {e}. Respuesta: {response.content if 'response' in locals() else 'N/A'}"}
+        print(f"!!! Error en summarize_and_get_subject_node: {e}")
+        return {"errors": [f"Error en resumen: {e}"]}
 
 async def intent_detection_node(state: DocumentState) -> DocumentState:
-    print("--- Worker: Detección de intención ---")
-    contexto_analisis = f"Asunto: {state.get('subject', '')}\nResumen: {state.get('summary', '')}"
+    print("--- Worker (Expert): Detección de intención ---")
+    ctx = get_toon_context(state)
     prompt = f"""
-    Eres un analista experto en trámites. Tu objetivo es identificar la acción principal que el remitente quiere que la entidad realice.
-
-    Contexto:
-    {contexto_analisis}
-
-    Selecciona la intención principal de la siguiente lista de acciones predefinidas:
-    - "Solicitar Información": El remitente pide datos, copias, o aclaraciones.
-    - "Presentar Queja/Reclamo": El remitente expresa insatisfacción o denuncia un problema.
-    - "Radicar para Pago": El remitente envía una factura o cuenta de cobro para ser pagada.
-    - "Entregar Documentación Requerida": El remitente está respondiendo a una solicitud previa de la entidad.
-    - "Iniciar Trámite Nuevo": El remitente está solicitando un permiso, licencia, o un nuevo proceso.
-    - "Notificar Decisión/Resolución": Un ente externo o interno está informando de una decisión legal o administrativa.
-    - "Consulta General": El remitente hace una pregunta general que no requiere una acción compleja.
-    - "Informativo/Cortesía": El documento no requiere acción, es solo para mantener informada a la entidad.
-
-    Devuelve únicamente un objeto JSON con la siguiente estructura:
-    {{
-      "intencion": "El nombre exacto de la intención de la lista",
-      "justificacion": "Una frase corta que explique por qué elegiste esa intención, basada en el texto."
-    }}
+    Analyze the intent based on this context: {ctx}
+    Identify the PRIMARY action the sender wants the entity to perform:
+    - Solicitar Información: Pide datos, copias, aclaraciones.
+    - Presentar Queja/Reclamo: Insatisfacción o denuncia.
+    - Radicar para Pago: Facturas/cuentas de cobro.
+    - Entregar Documentación Requerida: Respuesta a requerimientos.
+    - Iniciar Trámite Nuevo: Permisos, licencias, nuevos procesos.
+    - Notificar Decisión/Resolución: Informar decisiones legales.
+    - Consulta General: Preguntas que no requieren acción compleja.
+    - Informativo/Cortesía: Sin requerimiento de acción.
     """
     try:
-        response = await llm.ainvoke(prompt)
-        cleaned_content = re.sub(r"^```(?:json)?\s*|\s*```$", "", response.content.strip(), flags=re.DOTALL)
-        data = json.loads(cleaned_content)
-        return {"intent_analysis": data}
+        data = await llm.with_structured_output(IntentAnalysis).ainvoke(prompt)
+        return {"intent_analysis": data.dict()}
     except Exception as e:
-        return {"error": f"Error en nodo de intención: {e}. Respuesta: {response.content if 'response' in locals() else 'N/A'}"}
+        print(f"!!! Error en intent_detection_node: {e}")
+        return {"errors": [f"Error en intención: {e}"]}
 
 async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
-    print("--- Worker: Analizando sentimiento, Intención y Prioridad ---")
-    contexto_analisis = f"Asunto: {state.get('subject', '')}\nResumen: {state.get('summary', '')}\nPrimeros párrafos: {state.get('raw_text', '')[:1000]}"
-    prompt = f"""
-    Eres un experto en comunicación y psicología. Analiza el siguiente texto de un documento oficial.
-
-    Contexto del Documento:
-    {contexto_analisis}
-
-    Realiza dos tareas:
-    1.  **Análisis de Sentimiento:** Evalúa el tono general del remitente.
-    2.  **Detección de Urgencia:** Identifica si el lenguaje sugiere una necesidad de respuesta inmediata.
-
-    Devuelve únicamente un objeto JSON con la siguiente estructura:
-    {{
-      "sentimiento": {{
-        "etiqueta": "Positivo | Neutro | Negativo",
-        "puntuacion": "Un número de -1.0 (muy negativo) a 1.0 (muy positivo)",
-        "justificacion": "Una breve explicación de por qué se asignó ese sentimiento."
-      }},
-      "urgencia": {{
-        "nivel": "Baja | Media | Alta | Crítica",
-        "justificacion": "Explica por qué el lenguaje del documento implica este nivel de urgencia."
-      }}
-    }}
-
-    Ejemplo para una queja fuerte:
-    {{
-      "sentimiento": {{
-        "etiqueta": "Negativo",
-        "puntuacion": -0.8,
-        "justificacion": "El remitente usa un lenguaje confrontacional y expresa frustración con el servicio."
-      }},
-      "urgencia": {{
-        "nivel": "Alta",
-        "justificacion": "El remitente menciona 'respuesta inmediata' y amenaza con acciones legales."
-      }}
-    }}
-
-    NO uses bloques de código ni comillas triples. Devuelve solo el JSON.
-    """
+    print("--- Worker (Expert): Sentimiento y Urgencia ---")
+    ctx = get_toon_context(state)
+    prompt = f"Perform psychological and linguistic analysis to detect sentiment tone (-1 to 1) and urgency level (Baja, Media, Alta, Crítica) for this context: {ctx}"
     try:
-        response = await llm.ainvoke(prompt)
-        cleaned_content = re.sub(r"^```(?:json)?\s*|\s*```$", "", response.content.strip(), flags=re.DOTALL)
-        data = json.loads(cleaned_content)
-        return {"sentiment_analysis": data}
+        data = await llm.with_structured_output(SentimentUrgency).ainvoke(prompt)
+        result = {
+            "sentimiento": {
+                "etiqueta": data.etiqueta,
+                "puntuacion": data.puntuacion,
+                "justificacion": data.justificacion
+            },
+            "urgencia": {
+                "nivel": data.urgencia_nivel,
+                "justificacion": data.urgencia_justificacion
+            }
+        }
+        return {"sentiment_analysis": result}
     except Exception as e:
-        return {"error": f"Error en nodo de sentimiento: {e}. Respuesta: {response.content if 'response' in locals() else 'N/A'}"}
+        print(f"!!! Error en sentiment_and_urgency_node: {e}")
+        return {"errors": [f"Error en sentimiento: {e}"]}
 
 async def classify_document_node(state: DocumentState) -> DocumentState:
-    print("--- Worker: Clasificando el documento ---")
-    contexto = f"""
-    Asunto: {state.get("subject", "No disponible")}
-    Resumen: {state.get("summary", "No disponible")}
-    Intención detectada: {state.get("intent_analysis", {}).get("intencion", "No disponible")}
-    Texto completo (primeros 8000 caracteres): {state.get("raw_text", "")[:8000]}
-    """
+    print("--- Worker (Expert): Clasificación TRD ---")
+    ctx = get_toon_context(state)
     prompt = f"""
-    Eres un asistente experto en gestión documental para una entidad pública colombiana. 
-    Tu tarea es identificar la **tipología documental** más apropiada para el siguiente documento, basándote en una lista predefinida y en el contenido del archivo.
-
-    ### MARCO DE REFERENCIA NORMATIVO
-    La gestión documental en Colombia, según la Ley 594 de 2000, incluye procesos como la producción, recepción, trámite y organización de documentos. 
-    Las **tipologías documentales** son las diferentes clases de documentos que se producen o reciben (ej: informes, contratos, solicitudes). 
-    El objetivo de identificarlas correctamente es facilitar su posterior organización y aplicación de las Tablas de Retención Documental (TRD).
-
-    ### Contexto del Documento a Analizar:
-    {contexto}
-
-    ### LISTA CERRADA DE TIPOLOGÍAS DOCUMENTALES:
-    - Acto Administrativo: Documento que manifiesta una decisión de la autoridad administrativa (ej: Resolución, Decreto, Circular).
-    - Contrato: Acuerdo de voluntades para crear o transmitir derechos y obligaciones.
-    - Informe: Documento que expone hechos o datos verificables sobre un asunto específico.
-    - Factura o Cuenta de Cobro: Documento comercial que indica una deuda por la venta de bienes o prestación de servicios.
-    - Historia Laboral: Expediente que reúne los documentos relacionados con la vida laboral de un funcionario.
-    - Hoja de Vida: Documento que resume la experiencia y formación de una persona.
-    - Solicitud: Documento mediante el cual se realiza una petición, queja, reclamo o consulta (Derecho de Petición).
-    - Tutela: Acción judicial para la protección de derechos fundamentales.
-    - Comunicación Oficial: Oficios, memorandos y otras comunicaciones formales entre dependencias o entidades.
-    - Póliza: Contrato de seguro.
-    - Certificado: Documento que da constancia de un hecho o cualidad.
-    - Otro: Documentos que no encajan claramente en ninguna de las categorías anteriores.
-    
-    ### Instrucciones:
-    1- Analiza el contexto proporcionado del documento.
-    2- Elige la tipología documental más precisa de la "LISTA CERRADA DE TIPOLOGÍAS". No puedes usar un valor que no esté en la lista.
-    3- Si el documento es una queja o un reclamo, clasifícalo como "Solicitud", ya que se enmarca en el derecho de petición.
-    4- Si tienes dudas o la información es ambigua, asigna "Otro" con una confianza baja (≤ 0.5).
-    5- Calcula tu nivel de confianza en la clasificación, siendo un número decimal entre 0.0 y 1.0.
-    6- Responde únicamente con un objeto JSON válido. No incluyas explicaciones, saludos ni texto adicional.
-
-    ### Formato de Salida:
-    {{
-    "tipologia_documental": "Uno de los valores exactos de la lista",
-    "confianza": 0.95
-    }}
+    Identify the Doc Typology for a Colombian Public Entity (Law 594/2000).
+    Context: {ctx}
+    List: Acto Administrativo, Contrato, Informe, Factura/Cuenta de Cobro, Historia Laboral, Hoja de Vida, Solicitud (PQRS), Tutela, Comunicación Oficial, Póliza, Certificado, Otro.
     """
     try:
-        response = await llm.ainvoke(prompt)
-        cleaned_content = re.sub(r"^```(?:json)?\s*|\s*```$", "", response.content.strip(), flags=re.DOTALL)
-        data = json.loads(cleaned_content)
-        return {"classification": data}
+        data = await llm.with_structured_output(ClassificationOutput).ainvoke(prompt)
+        # Sincronizamos con los nombres exactos: tipologia_documental y confianza
+        return {"classification": {"tipologia_documental": data.tipologia_documental, "confianza": data.confianza}}
     except Exception as e:
-        return {"error": f"Error en nodo de clasificación: {e}. Respuesta: {response.content if 'response' in locals() else 'N/A'}"}
+        print(f"!!! Error en classify_document_node: {e}")
+        return {"errors": [f"Error en clasificación: {e}"]}
 
 async def tag_document_node(state: DocumentState) -> DocumentState:
-    print("--- Worker: Generando etiquetas ---")
-    contexto = f"""
-    - El documento ha sido clasificado como: **{state.get('classification', 'N/A')}**
-    - Asunto: {state.get('subject', 'N/A')}
-    - Resumen: {state.get('summary', 'N/A')}
-    """
-    prompt = f"""
-    Eres un asistente experto en análisis documental. 
-    Tu tarea es generar entre 5 y 7 etiquetas únicas, claras y relevantes, basadas en el contenido de un documento.
-
-    - Las etiquetas deben estar en español, ser palabras o frases cortas, no repetidas, y en minúsculas.
-    - No uses símbolos, ni hashtags, ni explicaciones.
-
-    Contenido:
-    {contexto}
-
-    Devuelve únicamente una lista en formato JSON válida, por ejemplo:
-    ["etiqueta1", "etiqueta2", "etiqueta3", ...]
-    
-    NO uses bloques de código ni comillas triples. Devuelve solo el JSON sin envoltorios.
-    """
+    print("--- Worker (Expert): Generando etiquetas ---")
+    ctx = get_toon_context(state)
+    prompt = f"Generate 5-7 clear, relevant Spanish tags for this document context:\n{ctx}"
     try:
-        response = await llm.ainvoke(prompt)
-        cleaned_content = response.content.strip().strip("'\"")
-        tags = json.loads(cleaned_content)
-        return {"tags": tags}
+        data = await llm.with_structured_output(TagsOutput).ainvoke(prompt)
+        return {"tags": data.tags}
     except Exception as e:
-        return {"error": f"Error en nodo de etiquetas: {e}. Respuesta: {response.content if 'response' in locals() else 'N/A'}"}
+        print(f"!!! Error en tag_document_node: {e}")
+        return {"errors": [f"Error en etiquetas: {e}"]}
 
 async def extract_entities_node(state: DocumentState) -> DocumentState:
-    print("--- Worker: Extrayendo entidades clave ---")
-    contexto = f"""
-    Clasificación: **{state.get("classification", "Otro")}**.
-    Asunto: {state.get("subject", "")}
-    Resumen: {state.get("summary", "")}
-    """
+    print("--- Worker (Expert): Extracción de Entidades ---")
+    ctx = get_toon_context(state)
     prompt = f"""
-    Eres un asistente experto en gestión documental en Colombia.
-    Analiza el siguiente documento, basado en su contexto.
-
-    Contexto:
-    {contexto}
-
-    ### Instrucciones:
-    1. Identifica entidades, montos, fechas, códigos y hechos relevantes.
-    2. Siempre agrega una breve descripción contextual de cada dato extraído.
-    3. Si es posible, organiza una línea de tiempo con los eventos principales (fecha + evento).
-    4. Lista hechos relevantes aunque no tengan fecha exacta.
-    5. Devuelve SOLO un JSON válido, sin texto adicional, sin bloques de código y sin comillas triples.
-
-    ### Estructura de salida JSON:
-    {{
-    "personas_naturales": [
-        {{"nombre": "...", "rol": "..."}}
-    ],
-    "personas_juridicas": [
-        {{"nombre": "...", "rol": "..."}}
-    ],
-    "fechas": [
-        {{"fecha": "YYYY-MM-DD", "descripcion": "..."}}
-    ],
-    "montos": [
-        {{"valor": "...", "descripcion": "..."}}
-    ],
-    "codigos": [
-        {{"codigo": "...", "descripcion": "..."}}
-    ],
-    "otros": [
-        {{"dato": "...", "descripcion": "..."}}
-    ],
-    "linea_de_tiempo": [
-        {{"fecha": "YYYY-MM-DD", "evento": "..."}}
-    ],
-    "hechos_relevantes": [
-        "..."
-    ]
-    }}
-
-    ### TEXTO DEL DOCUMENTO:
-    {state['raw_text'][:8000]}
+    Extract key entities from the text. 
+    Instructions:
+    - Identify People and Organizations.
+    - Detect Dates, Amounts, and specific Codes (Radicados, Case IDs).
+    - Map relevant Facts and build a Timeline.
+    - IMPORTANT: If a category is not found, return an empty list []. Do NOT invent data.
     
-    NO uses bloques de código ni comillas triples. Devuelve solo el JSON sin envoltorios.
+    Context: {ctx}
+    Text Segment: {state['raw_text'][:8000]}
     """
     try:
-        response = await llm.ainvoke(prompt)
-        cleaned_content = re.sub(r"^```(?:json)?\s*|\s*```$", "", response.content.strip(), flags=re.DOTALL)
-        data = json.loads(cleaned_content)
-        # Aquí puedes agregar tu función de normalización si es necesaria
-        return {"entities": data}
+        data = await llm.with_structured_output(EntitiesOutput).ainvoke(prompt)
+        return {"entities": data.dict()}
     except Exception as e:
-        return {"error": f"Error en nodo de extracción de entidades: {e}. Respuesta: {response.content if 'response' in locals() else 'N/A'}"}
+        print(f"!!! Error en extract_entities_node: {e}")
+        return {"errors": [f"Error en extracción de entidades: {e}"]}
 
 async def priority_assignment_node(state: DocumentState) -> DocumentState:
-    print("--- Worker: Asignando Prioridad Legal y Operativa ---")
-    contexto_completo = {
-        "clasificacion": state.get("classification"),
-        "intencion": state.get("intent_analysis", {}).get("intencion"),
-        "sentimiento": state.get("sentiment_analysis", {}).get("sentimiento", {}).get("etiqueta"),
-        "urgencia_tono": state.get("sentiment_analysis", {}).get("urgencia", {}).get("nivel"),
-        "entidades": state.get("entities", {})
-    }
+    print("--- Worker (Expert): Prioridad Legal (Ley 1755) ---")
+    ctx = get_toon_context(state)
     prompt = f"""
-        Eres un asesor legal experto en derecho administrativo colombiano, especializado en la Ley 1755 de 2015 (Derecho de Petición). 
-        Tu única tarea es analizar el siguiente documento y asignarle un nivel de prioridad y un término de respuesta legal, basándote exclusivamente en el marco normativo proporcionado.
-
-        ### MARCO LEGAL Y TÉCNICO VINCULANTE (Ley 1755 de 2015 y CPACA)
-
-        **Términos Generales (Artículo 14, Ley 1755):**
-        1.  **Solicitud de documentos y de información:** 10 días hábiles.
-        2.  **Petición de consulta a las autoridades en relación con las materias a su cargo:** 30 días hábiles.
-        3.  **Cualquier otra petición (Regla General):** 15 días hábiles.
-
-        **Atención Prioritaria (Artículo 20, Ley 1755):**
-        1.  **Peticiones para evitar un perjuicio irremediable:** Se debe dar atención prioritaria. El término de respuesta sigue siendo el general.
-        2.  **Peticiones de periodistas para el ejercicio de su actividad:** Se tramitará preferencialmente. El término de respuesta sigue siendo el general.
-
-        **Peticiones entre Autoridades (Artículo 31, CPACA):**
-        1.  **Solicitudes de información entre autoridades:** 10 días hábiles.
-
-        ### CRITERIOS DE CLASIFICACIÓN (de mayor a menor)
-        *   **PRIORIDAD ALTA:** Solicitud de documentos/información o entre autoridades (10 días).
-        *   **PRIORIDAD MEDIA:** Petición general, quejas, reclamos (15 días).
-        *   **PRIORIDAD BAJA:** Petición de consulta (30 días).
-
-        ### DATOS DEL DOCUMENTO A EVALUAR
-        {json.dumps(contexto_completo, indent=2, ensure_ascii=False)}
-
-        ### INSTRUCCIONES ESTRICTAS
-        1. Analiza el documento y determina el nivel de prioridad.
-        2. Sustenta con referencia expresa a la Ley 1755 de 2015.
-        3. Asigna un término de respuesta sugerido en días hábiles.
-        4. Responde únicamente con un objeto JSON válido.
-
-        ### FORMATO DE RESPUESTA OBLIGATORIO (JSON VÁLIDO ÚNICAMENTE)
-        {{
-        "prioridad": "Crítica | Alta | Media | Baja",
-        "justificacion_legal": "Ejemplo: 'Prioridad Alta por ser petición de documentos (Art. 14, inc. 2, Ley 1755 de 2015)'",
-        "termino_respuesta_sugerido_dias": 10
-        }}
-
-        RESPONDE ÚNICAMENTE CON EL JSON SOLICITADO.
-        """
+    Act as a Legal Advisor specialized in Ley 1755/2015.
+    TERMS: 
+    1. Docs/Info: 10 days. 
+    2. Queries/Consultas: 30 days. 
+    3. General/PQRS: 15 days.
+    
+    CRITERIA:
+    - High: Docs/Info or Authority requests (10 days).
+    - Mid: General requests, complaints (15 days).
+    - Low: Consultas (30 days).
+    
+    Context: {ctx}
+    Assignment: Assign priority and MUST cite the specific article/inciso of Law 1755.
+    """
     try:
-        response = await llm.ainvoke(prompt)
-        cleaned_content = re.search(r"\{.*\}", response.content, re.DOTALL).group()
-        data = json.loads(cleaned_content)
-        return {"priority_analysis": data}
+        data = await llm.with_structured_output(PriorityOutput).ainvoke(prompt)
+        return {"priority_analysis": data.dict()}
     except Exception as e:
-        return {"error": f"Error en nodo de prioridad: {e}. Respuesta: {response.content if 'response' in locals() else 'N/A'}"}
+        print(f"!!! Error en priority_assignment_node: {e}")
+        return {"errors": [f"Error en prioridad: {e}"]}
 
 async def compliance_analysis_node(state: DocumentState) -> DocumentState:
-    print("--- Worker: Análisis de conformidad para radicación documental ---")
-    contexto = f"""
-    Datos del documento:
-    - Clasificación: {state.get("classification", "Otro")}
-    - Asunto: {state.get("subject", "")}
-    - Resumen: {state.get("summary", "")}
-    - Texto (fragmento): {state.get("raw_text", "")[:6000]}
-    - Entidades extraídas: {json.dumps(state.get("entities", {}), indent=2, ensure_ascii=False)}
-    """
+    print("--- Worker (Expert): Conformidad Archivística (Acuerdo 060) ---")
+    ctx = get_toon_context(state)
     prompt = f"""
-    Eres un experto en gestión documental y archivística colombiana, especializado en el Acuerdo 060 de 2001 del AGN.
-    Realiza una verificación de conformidad del documento para determinar si cumple con los requisitos mínimos para su radicación.
+    Verify archival compliance based on Acuerdo 060 de 2001 (AGN).
+    CHECKPOINTS:
+    1. Sender Identification (Clear name/contact).
+    2. Recipient correctness.
+    3. Purpose/Subject clarity.
+    4. Signature presence.
+    5. Legibility.
+    6. Annexes mentioned.
     
-    ### CRITERIOS DE VERIFICACIÓN (Basados en la norma)
-    1.  **Datos del Remitente:** ¿Identifica claramente quién envía (nombre, contacto)?
-    2.  **Destinatario:** ¿Está dirigido a esta entidad?
-    3.  **Asunto:** ¿Tiene un propósito claro?
-    4.  **Firma y Responsable:** ¿Está firmado o presenta nombre del responsable? (Si no, es anónimo).
-    5.  **Integridad y Legibilidad:** ¿Es legible y parece completo?
-    6.  **Anexos:** ¿Menciona anexos?
-
-    ###  INSTRUCCIONES ESTRICTAS:
-    1- Evalúa el documento punto por punto contra los 6 "CRITERIOS DE VERIFICACIÓN".
-    2- En el campo "comentarios", detalla el resultado de cada criterio.
-    3- Si un criterio no cumple, explica por qué.
-    4- En "cumple_normativa", pon false si alguno de los criterios 1, 2, 3 o 5 no cumple.
-    5- Al final de los comentarios, añade una sección de "Recomendaciones".
-    6- Responde únicamente con un objeto JSON válido.
-
-    ### Contexto a Analizar:
-    {contexto}
-
-    Responde únicamente en JSON con esta estructura:
-    {{
-      "cumple_normativa": true | false,
-      "comentarios": "Verificación detallada de los 6 criterios...\n\n**Recomendaciones:**\n- Si es anónimo: 'Remitir sin radicar a la oficina competente para su evaluación.'\n- Si falta asunto: 'Solicitar al remitente que aclare el motivo.'\n- Si todo está OK: 'Proceder con la radicación y registro.'"
-    }}
+    Context: {ctx}
+    Evaluate each point and provide solid archival recommendations for filing (radicación).
     """
     try:
-        response = await llm.ainvoke(prompt)
-        cleaned_content = re.search(r"\{.*\}", response.content, re.DOTALL).group()
-        data = json.loads(cleaned_content)
-        return {"compliance_analysis": data}
+        data = await llm.with_structured_output(ComplianceOutput).ainvoke(prompt)
+        return {"compliance_analysis": data.dict()}
     except Exception as e:
-        return {"error": f"Error en nodo de conformidad: {e}. Respuesta: {response.content if 'response' in locals() else 'N/A'}"}
+        print(f"!!! Error en compliance_analysis_node: {e}")
+        return {"errors": [f"Error en conformidad: {e}"]}
