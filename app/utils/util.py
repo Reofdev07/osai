@@ -4,6 +4,7 @@ import os
 import tiktoken
 import json        
 import traceback
+import asyncio
 
 
 from urllib.parse import urlparse
@@ -67,7 +68,7 @@ async def process_document_graph(file_path: str, job_id: str):
             # Pequeño delay para respetar Rate Limits de Gemini Free (15 RPM)
             # Solo aplicamos el delay si el nodo es de análisis (IA)
             if node_name in ["summarize", "intent_detection", "sentiment_and_urgency", "classify", "tag", "extract_entities", "priority_assignment"]:
-                await asyncio.sleep(1.5) 
+                await asyncio.sleep(2.5) 
 
     final_state = accumulated_state
     
@@ -128,7 +129,6 @@ async def process_document_graph(file_path: str, job_id: str):
 #             print(f"🤔 Limpieza [Job {job_id}]: El archivo no se encontró para eliminar.")
                
 # Asegúrate de tener este import al principio de tu archivo
-from urllib.parse import urlparse
 
 async def stream_download_file(url: str, job_id: str):
     """
