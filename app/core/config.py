@@ -34,9 +34,9 @@ class Settings(BaseSettings):
 class DevelopmentSettings(Settings):
     # Los valores específicos se pueden quedar aquí si son fijos
     # O se pueden mover al .env.development
-    # AI_MODEL: str = "gemini-2.0-flash"
-    # AI_PROVIDER: str = "google"
-    # GOOGLE_API_KEY: str
+    AI_MODEL: str = os.getenv("MODEL_NAME_DEV") or "gemini-2.5-flash"
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER_DEV") or "google_genai"
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
 
     #COHERE
     # AI_MODEL:str = os.getenv("COHERE_MODEL")
