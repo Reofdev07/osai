@@ -53,7 +53,7 @@ async def process_document_graph(file_path: str, job_id: str):
             step_output = step_output or {}
             accumulated_state.update(step_output)
 
-            # Lógica de notificación centralizada (ahora dentro del bucle)
+            # Lógica de notificación centralizada
             description = step_descriptions.get(node_name, f"Procesando {node_name}...")
 
             await notify_steps_to_laravel(
@@ -63,6 +63,11 @@ async def process_document_graph(file_path: str, job_id: str):
                 data=step_output,
                 step=description
             )
+
+            # Pequeño delay para respetar Rate Limits de Gemini Free (15 RPM)
+            # Solo aplicamos el delay si el nodo es de análisis (IA)
+            if node_name in ["summarize", "intent_detection", "sentiment_and_urgency", "classify", "tag", "extract_entities", "priority_assignment"]:
+                await asyncio.sleep(1.5) 
 
     final_state = accumulated_state
     
