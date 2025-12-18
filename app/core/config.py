@@ -32,15 +32,31 @@ class Settings(BaseSettings):
         extra = 'ignore' # Buena práctica para ignorar campos extra en los .env
 
 class DevelopmentSettings(Settings):
-    # Los valores específicos se pueden quedar aquí si son fijos
-    # O se pueden mover al .env.development
-    AI_MODEL: str = os.getenv("MODEL_NAME_DEV") or "gemini-2.5-flash"
-    AI_PROVIDER: str = os.getenv("AI_PROVIDER_DEV") or "google_genai"
-    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
+    # Selector: GEMINI | DEEPSEEK | COHERE
+    AI_SELECTOR: str = os.getenv("AI_SELECTOR", "GEMINI")
 
-    #COHERE
-    # AI_MODEL:str = os.getenv("COHERE_MODEL")
-    # AI_PROVIDER:str = os.getenv("AI_PROVIDER")
+    # Claves originales de tu .env
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY")
+    CO_API_KEY: str = os.getenv("CO_API_KEY")
+
+    @property
+    def AI_MODEL(self) -> str:
+        mapping = {
+            "GEMINI": os.getenv("MODEL_NAME_DEV") or "gemini-2.5-flash",
+            "DEEPSEEK": "deepseek-chat",
+            "COHERE": "command-r-plus"
+        }
+        return mapping.get(self.AI_SELECTOR, mapping["GEMINI"])
+
+    @property
+    def AI_PROVIDER(self) -> str:
+        mapping = {
+            "GEMINI": "google_genai",
+            "DEEPSEEK": "deepseek",
+            "COHERE": "cohere"
+        }
+        return mapping.get(self.AI_SELECTOR, mapping["GEMINI"])
     
     # Bucket
     BUCKET_NAME: str

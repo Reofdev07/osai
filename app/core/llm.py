@@ -11,18 +11,23 @@ load_dotenv()
 
 def create_llm():
     """
-    Crea un objeto llamado LLM que se encarga de generar respuestas a partir de un modelo de lenguaje.
-    Utiliza la configuración del entorno para determinar qué modelo y proveedor usar.
-
-    Returns:
-        LLM: Instancia de LLM.
+    Crea un objeto LLM dinámico basado en el AI_SELECTOR de settings.
+    Soporta GEMINI, DEEPSEEK y COHERE.
     """
-    # nota add **kwargs de ser necesario
-    # para pasar más parámetros al modelo
+    provider = settings.AI_PROVIDER
+    model = settings.AI_MODEL
+    
+    kwargs = {}
+    if provider == "google_genai":
+        kwargs["api_key"] = settings.GOOGLE_API_KEY
+    elif provider == "deepseek":
+        kwargs["api_key"] = settings.DEEPSEEK_API_KEY
+    elif provider == "cohere":
+        kwargs["api_key"] = settings.CO_API_KEY
+
     return init_chat_model(
-        settings.AI_MODEL, model_provider=settings.AI_PROVIDER
+        model, 
+        model_provider=provider,
+        **kwargs
     )
-    # return init_chat_model(
-    #     model="command-r-08-2024", 
-    #     model_provider="cohere",
-    # )
+
