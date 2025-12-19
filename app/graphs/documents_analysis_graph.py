@@ -94,22 +94,30 @@ workflow.add_conditional_edges(
 # La ruta de LlamaParse tiene un paso extra: actualizar el contador
 workflow.add_edge("llama_parse", "update_usage_counter")
 
-# Unificar todas las rutas de extracción para que converjan en el primer paso de análisis
+# Unificar todas las rutas de extracción para que converjan en summarize
 workflow.add_edge("text_pdf", "summarize")
 workflow.add_edge("google_vision", "summarize")
 workflow.add_edge("update_usage_counter", "summarize")
 
-# La cadena de análisis principal, un nodo lleva al siguiente
-workflow.add_edge("summarize", "intent_detection")
-workflow.add_edge("intent_detection", "sentiment_and_urgency")
-workflow.add_edge("sentiment_and_urgency", "classify")
-workflow.add_edge("classify", "tag")
-workflow.add_edge("tag", "extract_entities")
-workflow.add_edge("extract_entities", "priority_assignment")
-workflow.add_edge("priority_assignment", "compliance_analysis")
+# --- FAN-OUT: Lanzar múltiples análisis en paralelo después del resumen ---
+# El resumen nos sirve de contexto (vía TOON) para los demás nodos.
+# Pero los demás no dependen entre sí.
+analysis_nodes = [
+    "intent_detection", 
+    "sentiment_and_urgency", 
+    "classify", 
+    "tag", 
+    "extract_entities", 
+    "priority_assignment", 
+    "compliance_analysis"
+]
+
+for node in analysis_nodes:
+    workflow.add_edge("summarize", node)
+    # FAN-IN: Todos apuntan al final (o a un nodo agregador si fuera necesario)
+    workflow.add_edge(node, END)
 
 # Definir los puntos finales del grafo
-workflow.add_edge("compliance_analysis", END) # Final exitoso
 workflow.add_edge("unsupported", END)         # Final para archivos no soportados
 
 # --- 4. Compilar el grafo ---

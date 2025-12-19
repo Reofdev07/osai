@@ -28,6 +28,7 @@ from app.schemas.agent_schemas import (
 
 # --- CONFIGURACIÓN GLOBAL PARA LOS NODOS ---
 LLAMA_PARSE_FREE_LIMIT_WEEKLY = 7000
+CONTEXT_WINDOW_LIMIT = 300000 # ~75k tokens, suficiente para documentos largos
 llm = create_llm()
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.GOOGLE_APPLICATION_CREDENTIALS
 
@@ -272,7 +273,7 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     3. Identify the document date (the date of issuance as written in the text, e.g., 'Octubre 2025' or 'Octubre 1 de 2025'). 
     
     TEXT:
-    {state['raw_text'][:8000]}
+    {state['raw_text'][:CONTEXT_WINDOW_LIMIT]}
     """
     try:
         # Usamos include_raw=True para capturar la metadata de tokens
@@ -286,7 +287,7 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
             "summary": data.resumen, 
             "subject": data.asunto,
             "document_date": data.fecha,
-            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+            "usage_metadata": usage # El reducer en el State se encarga de sumar
         }
     except Exception as e:
         print(f"!!! Error en summarize_and_get_subject_node: {e}")
@@ -316,7 +317,7 @@ async def intent_detection_node(state: DocumentState) -> DocumentState:
         
         return {
             "intent_analysis": data.dict(),
-            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+            "usage_metadata": usage
         }
     except Exception as e:
         print(f"!!! Error en intent_detection_node: {e}")
@@ -346,7 +347,7 @@ async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
         }
         return {
             "sentiment_analysis": result_dict,
-            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+            "usage_metadata": usage
         }
     except Exception as e:
         print(f"!!! Error en sentiment_and_urgency_node: {e}")
@@ -370,7 +371,7 @@ async def classify_document_node(state: DocumentState) -> DocumentState:
         # Sincronizamos con los nombres exactos: tipologia_documental y confianza
         return {
             "classification": {"tipologia_documental": data.tipologia_documental, "confianza": data.confianza},
-            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+            "usage_metadata": usage
         }
     except Exception as e:
         print(f"!!! Error en classify_document_node: {e}")
@@ -389,7 +390,7 @@ async def tag_document_node(state: DocumentState) -> DocumentState:
 
         return {
             "tags": data.tags,
-            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+            "usage_metadata": usage
         }
     except Exception as e:
         print(f"!!! Error en tag_document_node: {e}")
@@ -407,7 +408,7 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
     - IMPORTANT: If a category is not found, return an empty list []. Do NOT invent data.
     
     Context: {ctx}
-    Text Segment: {state['raw_text'][:8000]}
+    Text Segment: {state['raw_text'][:CONTEXT_WINDOW_LIMIT]}
     """
     try:
         runnable = llm.with_structured_output(EntitiesOutput, include_raw=True)
@@ -418,7 +419,7 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
 
         return {
             "entities": data.dict(),
-            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+            "usage_metadata": usage
         }
     except Exception as e:
         print(f"!!! Error en extract_entities_node: {e}")
@@ -451,7 +452,7 @@ async def priority_assignment_node(state: DocumentState) -> DocumentState:
 
         return {
             "priority_analysis": data.dict(),
-            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+            "usage_metadata": usage
         }
     except Exception as e:
         print(f"!!! Error en priority_assignment_node: {e}")
@@ -482,7 +483,7 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
 
         return {
             "compliance_analysis": data.dict(),
-            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+            "usage_metadata": usage
         }
     except Exception as e:
         print(f"!!! Error en compliance_analysis_node: {e}")

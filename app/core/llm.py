@@ -1,3 +1,4 @@
+from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain.chat_models import init_chat_model
 
 from dotenv import load_dotenv
@@ -6,6 +7,14 @@ from app.core.config import settings
 
 
 load_dotenv()
+
+# Configuración de Rate Limiter (Gemini Free: 15 RPM -> 1 peticion cada 4 segs)
+# Esto permite paralelizacion en el grafo sin bloquear el API.
+rate_limiter = InMemoryRateLimiter(
+    requests_per_second=0.25, 
+    check_every_n_seconds=0.1, 
+    max_bucket_size=1
+)
 
 
 
@@ -28,6 +37,7 @@ def create_llm():
     return init_chat_model(
         model, 
         model_provider=provider,
+        rate_limiter=rate_limiter,
         **kwargs
     )
 

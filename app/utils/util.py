@@ -65,11 +65,6 @@ async def process_document_graph(file_path: str, job_id: str):
                 step=description
             )
 
-            # Pequeño delay para respetar Rate Limits de Gemini Free (15 RPM)
-            # Solo aplicamos el delay si el nodo es de análisis (IA)
-            if node_name in ["summarize", "intent_detection", "sentiment_and_urgency", "classify", "tag", "extract_entities", "priority_assignment"]:
-                await asyncio.sleep(2.5) 
-
     final_state = accumulated_state
     
     # Notificación final con el estado completo
