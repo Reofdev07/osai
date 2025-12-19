@@ -16,7 +16,7 @@ from llama_index.core import SimpleDirectoryReader
 
 # --- Imports de tu propio proyecto ---
 from app.schemas.graph_state import DocumentState
-from app.utils.token_counter import count_tokens
+from app.utils.token_counter import count_tokens, update_usage_metadata
 from app.utils.toon_helper import get_toon_context
 from app.core.llm import create_llm
 from app.core.config import settings
@@ -275,11 +275,18 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     {state['raw_text'][:8000]}
     """
     try:
-        data = await llm.with_structured_output(ExtractionSummary).ainvoke(prompt)
+        # Usamos include_raw=True para capturar la metadata de tokens
+        runnable = llm.with_structured_output(ExtractionSummary, include_raw=True)
+        result = await runnable.ainvoke(prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+        
         return {
             "summary": data.resumen, 
             "subject": data.asunto,
-            "document_date": data.fecha
+            "document_date": data.fecha,
+            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
         }
     except Exception as e:
         print(f"!!! Error en summarize_and_get_subject_node: {e}")
@@ -301,8 +308,16 @@ async def intent_detection_node(state: DocumentState) -> DocumentState:
     - Informativo/Cortesía: Sin requerimiento de acción.
     """
     try:
-        data = await llm.with_structured_output(IntentAnalysis).ainvoke(prompt)
-        return {"intent_analysis": data.dict()}
+        runnable = llm.with_structured_output(IntentAnalysis, include_raw=True)
+        result = await runnable.ainvoke(prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+        
+        return {
+            "intent_analysis": data.dict(),
+            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+        }
     except Exception as e:
         print(f"!!! Error en intent_detection_node: {e}")
         return {"errors": [f"Error en intención: {e}"]}
@@ -312,8 +327,13 @@ async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
     ctx = get_toon_context(state)
     prompt = f"Perform psychological and linguistic analysis to detect sentiment tone (-1 to 1) and urgency level (Baja, Media, Alta, Crítica) for this context: {ctx}"
     try:
-        data = await llm.with_structured_output(SentimentUrgency).ainvoke(prompt)
-        result = {
+        runnable = llm.with_structured_output(SentimentUrgency, include_raw=True)
+        result = await runnable.ainvoke(prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+
+        result_dict = {
             "sentimiento": {
                 "etiqueta": data.etiqueta,
                 "puntuacion": data.puntuacion,
@@ -324,7 +344,10 @@ async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
                 "justificacion": data.urgencia_justificacion
             }
         }
-        return {"sentiment_analysis": result}
+        return {
+            "sentiment_analysis": result_dict,
+            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+        }
     except Exception as e:
         print(f"!!! Error en sentiment_and_urgency_node: {e}")
         return {"errors": [f"Error en sentimiento: {e}"]}
@@ -338,9 +361,17 @@ async def classify_document_node(state: DocumentState) -> DocumentState:
     List: Acto Administrativo, Contrato, Informe, Factura/Cuenta de Cobro, Historia Laboral, Hoja de Vida, Solicitud (PQRS), Tutela, Comunicación Oficial, Póliza, Certificado, Otro.
     """
     try:
-        data = await llm.with_structured_output(ClassificationOutput).ainvoke(prompt)
+        runnable = llm.with_structured_output(ClassificationOutput, include_raw=True)
+        result = await runnable.ainvoke(prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+
         # Sincronizamos con los nombres exactos: tipologia_documental y confianza
-        return {"classification": {"tipologia_documental": data.tipologia_documental, "confianza": data.confianza}}
+        return {
+            "classification": {"tipologia_documental": data.tipologia_documental, "confianza": data.confianza},
+            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+        }
     except Exception as e:
         print(f"!!! Error en classify_document_node: {e}")
         return {"errors": [f"Error en clasificación: {e}"]}
@@ -350,8 +381,16 @@ async def tag_document_node(state: DocumentState) -> DocumentState:
     ctx = get_toon_context(state)
     prompt = f"Generate 5-7 clear, relevant Spanish tags for this document context:\n{ctx}"
     try:
-        data = await llm.with_structured_output(TagsOutput).ainvoke(prompt)
-        return {"tags": data.tags}
+        runnable = llm.with_structured_output(TagsOutput, include_raw=True)
+        result = await runnable.ainvoke(prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+
+        return {
+            "tags": data.tags,
+            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+        }
     except Exception as e:
         print(f"!!! Error en tag_document_node: {e}")
         return {"errors": [f"Error en etiquetas: {e}"]}
@@ -371,8 +410,16 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
     Text Segment: {state['raw_text'][:8000]}
     """
     try:
-        data = await llm.with_structured_output(EntitiesOutput).ainvoke(prompt)
-        return {"entities": data.dict()}
+        runnable = llm.with_structured_output(EntitiesOutput, include_raw=True)
+        result = await runnable.ainvoke(prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+
+        return {
+            "entities": data.dict(),
+            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+        }
     except Exception as e:
         print(f"!!! Error en extract_entities_node: {e}")
         return {"errors": [f"Error en extracción de entidades: {e}"]}
@@ -396,8 +443,16 @@ async def priority_assignment_node(state: DocumentState) -> DocumentState:
     Assignment: Assign priority and MUST cite the specific article/inciso of Law 1755.
     """
     try:
-        data = await llm.with_structured_output(PriorityOutput).ainvoke(prompt)
-        return {"priority_analysis": data.dict()}
+        runnable = llm.with_structured_output(PriorityOutput, include_raw=True)
+        result = await runnable.ainvoke(prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+
+        return {
+            "priority_analysis": data.dict(),
+            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+        }
     except Exception as e:
         print(f"!!! Error en priority_assignment_node: {e}")
         return {"errors": [f"Error en prioridad: {e}"]}
@@ -419,8 +474,16 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     Evaluate each point and provide solid archival recommendations for filing (radicación).
     """
     try:
-        data = await llm.with_structured_output(ComplianceOutput).ainvoke(prompt)
-        return {"compliance_analysis": data.dict()}
+        runnable = llm.with_structured_output(ComplianceOutput, include_raw=True)
+        result = await runnable.ainvoke(prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+
+        return {
+            "compliance_analysis": data.dict(),
+            "usage_metadata": update_usage_metadata(state.get("usage_metadata"), usage)
+        }
     except Exception as e:
         print(f"!!! Error en compliance_analysis_node: {e}")
         return {"errors": [f"Error en conformidad: {e}"]}

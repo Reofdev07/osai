@@ -1,6 +1,7 @@
 
 import uuid
 import asyncio
+import json
 
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -144,9 +145,24 @@ async def stream_generator(full_payload: dict):
     # 4. Llamamos al LLM con el contexto completo (System Prompt + Historial)
     response_stream = llm.astream(messages_for_llm)
 
+    final_usage = None
     async for chunk in response_stream:
+        # Capturamos la metadata de uso (usualmente viene en el último chunk o se acumula)
+        if chunk.usage_metadata:
+            final_usage = chunk.usage_metadata
+            
         if chunk.content:
             yield chunk.content
+
+    # Enviamos la metadata al final con un marcador para que el Backend (Laravel) la procese
+    if final_usage:
+        # Aseguramos que sea un diccionario serializable
+        usage_dict = {
+            "input_tokens": final_usage.get("input_tokens", 0) if isinstance(final_usage, dict) else getattr(final_usage, "input_tokens", 0),
+            "output_tokens": final_usage.get("output_tokens", 0) if isinstance(final_usage, dict) else getattr(final_usage, "output_tokens", 0),
+            "total_tokens": final_usage.get("total_tokens", 0) if isinstance(final_usage, dict) else getattr(final_usage, "total_tokens", 0)
+        }
+        yield f"\n[USAGE_METADATA]:{json.dumps(usage_dict)}"
 
 
 

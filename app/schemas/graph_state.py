@@ -10,7 +10,8 @@ class DocumentState(TypedDict):
     raw_text: Optional[str]         # Texto extraído
     pages: Optional[List[bytes]]    # Páginas como imágenes
     page_count: int | None   # Para contar páginas (útil en ambas rutas)
-    token_count: int | None  # Para contar tokens del contenido final
+    token_count: int | None  # Para contar tokens del contenido final (caracteres aprox)
+    usage_metadata: Optional[Dict[str, int]] # Consumo real de la IA (input, output, total)
     step: str | None
     
     ocr_provider: Optional[str] | None # google_vision, llama_parse
