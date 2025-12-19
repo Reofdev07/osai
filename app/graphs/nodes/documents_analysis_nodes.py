@@ -38,21 +38,42 @@ async def analyze_and_route_node(state: DocumentState) -> DocumentState:
     """Analiza el tipo de archivo y decide la ruta inicial: texto, OCR o no soportado."""
     print("--- Nodo: Analizando tipo de archivo ---")
     file_path = state["file_path"]
-    TEXT_THRESHOLD = 20
-    # mime_type = magic.from_file(file_path, mime=True)
+    
+    # Umbrales mejorados
+    TEXT_RATIO_THRESHOLD = 100 # Promedio de caracteres por página para ser "pdf_text"
+    MAX_PAGES_TO_SAMPLE = 3
+    
     mime_type = puremagic.from_file(file_path, mime=True)
     
     if "pdf" in mime_type:
         try:
             with fitz.open(file_path) as doc:
-                if doc.page_count == 0: return {"file_type": "unsupported"}
-                page = doc.load_page(0)
-                text = page.get_text()
-            return {"file_type": "pdf_text"} if len(text) > TEXT_THRESHOLD else {"file_type": "pdf_scanned"}
-        except Exception:
+                page_count = doc.page_count
+                if page_count == 0: 
+                    return {"file_type": "unsupported", "error": "PDF sin páginas"}
+                
+                # Analizamos una muestra (primeras 3 páginas) para decidir
+                sample_text_length = 0
+                pages_to_check = min(page_count, MAX_PAGES_TO_SAMPLE)
+                
+                for i in range(pages_to_check):
+                    page = doc.load_page(i)
+                    sample_text_length += len(page.get_text().strip())
+                
+                avg_text = sample_text_length / pages_to_check
+                
+                if avg_text > TEXT_RATIO_THRESHOLD:
+                    print(f"--- Decisión: PDF Nativo (Promedio texto: {avg_text:.2f}) ---")
+                    return {"file_type": "pdf_text", "page_count": page_count}
+                else:
+                    print(f"--- Decisión: PDF Escaneado (Promedio texto: {avg_text:.2f}) ---")
+                    return {"file_type": "pdf_scanned", "page_count": page_count}
+                    
+        except Exception as e:
+            print(f"Error analizando PDF: {e}")
             return {"file_type": "pdf_scanned"}
     elif "image" in mime_type:
-        return {"file_type": "image"}
+        return {"file_type": "image", "page_count": 1}
     else:
         return {"file_type": "unsupported"}
 
@@ -68,7 +89,13 @@ async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
         content = "".join([doc.page_content for doc in docs])
         page_count = len(docs)
         token_count = count_tokens(content)
-        return {"raw_text": content, "page_count": page_count, "token_count": token_count}
+        return {
+            "raw_text": content, 
+            "page_count": page_count, 
+            "token_count": token_count,
+            "extraction_method": "native_pdf",
+            "extraction_pages": page_count
+        }
     except Exception as e:
         return {"error": f"Error extrayendo texto de PDF: {e}"}
 
@@ -109,7 +136,14 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
             return {"error": f"Tipo de archivo no soportado para Google Vision: {mime_type}"}
         token_count = count_tokens(extracted_content)
         print(f"Job [{job_id}]: Extracción con Google Vision finalizada. Páginas: {page_count}, Tokens: {token_count}")
-        return {"raw_text": extracted_content, "page_count": page_count, "token_count": token_count, "error": None}
+        return {
+            "raw_text": extracted_content, 
+            "page_count": page_count, 
+            "token_count": token_count, 
+            "error": None,
+            "extraction_method": "google_vision",
+            "extraction_pages": page_count
+        }
     except Exception as e:
         error_message = f"Error inesperado en Google Vision: {e}"
         print(f"Job [{job_id}]: {error_message}")
@@ -165,7 +199,9 @@ async def extract_with_llama_parse_node(state: DocumentState) -> DocumentState:
             "raw_text": extracted_content,
             "page_count": page_count,
             "token_count": token_count,
-            "error": None
+            "error": None,
+            "extraction_method": "llama_parse",
+            "extraction_pages": page_count
         }
 
     except Exception as e:
@@ -244,16 +280,27 @@ async def adaptive_ocr_orchestrator_node(state: DocumentState) -> DocumentState:
     return {"ocr_provider": provider_choice}
 
 async def update_llama_parse_usage_node(state: DocumentState) -> DocumentState:
-    """Si se usó LlamaParse, actualiza el contador en SQLite de forma atómica."""
-    pages_processed = state.get("page_count", 0)
+    """Si se usó un servicio de OCR/Parser, actualiza el contador en SQLite de forma atómica."""
+    pages_processed = state.get("extraction_pages", 0)
+    method = state.get("extraction_method")
+    
     if pages_processed > 0:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE settings SET value = CAST(value AS INTEGER) + ? WHERE key = 'llama_parse_usage'", (pages_processed,))
+            if method == "llama_parse":
+                cursor.execute("UPDATE settings SET value = CAST(value AS INTEGER) + ? WHERE key = 'llama_parse_usage'", (pages_processed,))
+                key_name = "llama_parse_usage"
+            elif method == "google_vision":
+                cursor.execute("UPDATE settings SET value = CAST(value AS INTEGER) + ? WHERE key = 'google_vision_usage'", (pages_processed,))
+                key_name = "google_vision_usage"
+            else:
+                return {} # No actualizamos para native_pdf en DB por ahora
+                
             conn.commit()
-            cursor.execute("SELECT value FROM settings WHERE key = 'llama_parse_usage'")
+            cursor.execute(f"SELECT value FROM settings WHERE key = ?", (key_name,))
             new_total = cursor.fetchone()[0]
-            print(f"--- Orquestador (SQLite): Contador de LlamaParse actualizado a {new_total} ---")
+            print(f"--- Orquestador (SQLite): Contador de {method} actualizado a {new_total} ---")
+            
     return {}
 
 # === Nodo Final para Archivos no Soportados ===

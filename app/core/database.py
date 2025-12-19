@@ -35,6 +35,8 @@ def initialize_database():
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
                            ("llama_parse_usage", "0"))
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
+                           ("google_vision_usage", "0"))
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
                            ("llama_parse_reset_timestamp", datetime.now().isoformat()))
             
             conn.commit()

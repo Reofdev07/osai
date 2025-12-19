@@ -1,18 +1,15 @@
 from typing import TypedDict, List, Optional, Dict, Any, Annotated
 import operator
 
-def reduce_usage(old_usage: Optional[Dict[str, int]], new_usage: Optional[Dict[str, int]]) -> Dict[str, int]:
-    """Suma los tokens de forma acumulativa entre nodos paralelos."""
-    if not old_usage: 
-        return new_usage or {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "thinking_tokens": 0}
-    if not new_usage: 
-        return old_usage
-    return {
-        "input_tokens": old_usage.get("input_tokens", 0) + new_usage.get("input_tokens", 0),
-        "output_tokens": old_usage.get("output_tokens", 0) + new_usage.get("output_tokens", 0),
-        "total_tokens": old_usage.get("total_tokens", 0) + new_usage.get("total_tokens", 0),
-        "thinking_tokens": old_usage.get("thinking_tokens", 0) + new_usage.get("thinking_tokens", 0),
-    }
+from app.utils.token_counter import update_usage_metadata
+
+def reduce_usage(old_usage: Optional[Dict[str, int]], new_usage: Any) -> Dict[str, int]:
+    """Suma los tokens de forma acumulativa entre nodos paralelos usando el helper centralizado."""
+    return update_usage_metadata(old_usage, new_usage)
+
+def last_value_reducer(old_value: Any, new_value: Any) -> Any:
+    """Conserva el último valor no nulo."""
+    return new_value if new_value is not None else old_value
 
 class DocumentState(TypedDict):
     # Input inicial
@@ -25,7 +22,12 @@ class DocumentState(TypedDict):
     pages: Optional[List[bytes]]    # Páginas como imágenes
     page_count: int | None   # Para contar páginas (útil en ambas rutas)
     token_count: int | None  # Para contar tokens del contenido final (caracteres aprox)
+    
+    # Tracking de Consumo de Servicios
     usage_metadata: Annotated[Dict[str, int], reduce_usage] # Consumo real de la IA (input, output, total)
+    extraction_method: Annotated[Optional[str], last_value_reducer] # native_pdf, llama_parse, google_vision
+    extraction_pages: Annotated[int, operator.add] # Cantidad de páginas procesadas por el OCR/Parser
+    
     step: str | None
     
     ocr_provider: Optional[str] | None # google_vision, llama_parse
