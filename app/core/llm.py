@@ -38,6 +38,7 @@ def create_llm():
         model, 
         model_provider=provider,
         rate_limiter=rate_limiter,
+        max_retries=3, # Reintentos automáticos para manejar picos de tráfico
         **kwargs
     )
 

@@ -23,7 +23,8 @@ from app.core.config import settings
 from app.core.database import DB_FILE  # Importa la ruta centralizada de la DB
 from app.schemas.agent_schemas import (
     ExtractionSummary, IntentAnalysis, SentimentUrgency, 
-    ClassificationOutput, EntitiesOutput, PriorityOutput, ComplianceOutput, TagsOutput
+    ClassificationOutput, EntitiesOutput, PriorityOutput, ComplianceOutput, TagsOutput,
+    MasterEnrichmentOutput
 )
 
 # --- CONFIGURACIÓN GLOBAL PARA LOS NODOS ---
@@ -293,108 +294,65 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
         print(f"!!! Error en summarize_and_get_subject_node: {e}")
         return {"errors": [f"Error en resumen: {e}"]}
 
-async def intent_detection_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Detección de intención ---")
-    ctx = get_toon_context(state)
-    prompt = f"""
-    Analyze the intent based on this context: {ctx}
-    Identify the PRIMARY action the sender wants the entity to perform:
-    - Solicitar Información: Pide datos, copias, aclaraciones.
-    - Presentar Queja/Reclamo: Insatisfacción o denuncia.
-    - Radicar para Pago: Facturas/cuentas de cobro.
-    - Entregar Documentación Requerida: Respuesta a requerimientos.
-    - Iniciar Trámite Nuevo: Permisos, licencias, nuevos procesos.
-    - Notificar Decisión/Resolución: Informar decisiones legales.
-    - Consulta General: Preguntas que no requieren acción compleja.
-    - Informativo/Cortesía: Sin requerimiento de acción.
+async def master_enrichment_node(state: DocumentState) -> DocumentState:
     """
-    try:
-        runnable = llm.with_structured_output(IntentAnalysis, include_raw=True)
-        result = await runnable.ainvoke(prompt)
-        
-        data = result['parsed']
-        usage = result['raw'].usage_metadata
-        
-        return {
-            "intent_analysis": data.dict(),
-            "usage_metadata": usage
-        }
-    except Exception as e:
-        print(f"!!! Error en intent_detection_node: {e}")
-        return {"errors": [f"Error en intención: {e}"]}
-
-async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Sentimiento y Urgencia ---")
+    Consolida Intención, Sentimiento/Urgencia, Clasificación y Etiquetas en UNA sola llamada.
+    Mantiene la misma 'capacidad cognitiva' al usar instrucciones detalladas por sección.
+    """
+    print("--- Worker (Expert Master): Enriquecimiento Global (Consolidado para evitar 429) ---")
     ctx = get_toon_context(state)
-    prompt = f"Perform psychological and linguistic analysis to detect sentiment tone (-1 to 1) and urgency level (Baja, Media, Alta, Crítica) for this context: {ctx}"
+    
+    prompt = f"""
+    Act as an expert archival analyst. Perform a multi-dimensional analysis of the document context provided.
+    
+    CONTEXT (TOON): {ctx}
+    
+    SCIENTIFIC/COGNITIVE TASKS:
+    
+    1. INTENT DETECTION: Identify the PRIMARY action. Options: Solicitar Información, Presentar Queja/Reclamo, Radicar para Pago, 
+       Entregar Documentación, Iniciar Trámite Nuevo, Notificar Decisión, Consulta General, Informativo/Cortesía.
+    
+    2. SENTIMENT & URGENCY: Analyze tone (-1 to 1) and urgency (Baja, Media, Alta, Crítica).
+    
+    3. DOCUMENT CLASSIFICATION: Identify typology (Law 594/2000). Options: Acto Administrativo, Contrato, Informe, 
+       Factura, Historia Laboral, Hoja de Vida, Solicitud (PQRS), Tutela, Comunicación Oficial, Certificado, Otro.
+    
+    4. TAG GENERATION: Create 5-7 relevant Spanish tags.
+    
+    Your output MUST be highly professional and reflect the deep analysis required for archival management in Colombia.
+    """
+    
     try:
-        runnable = llm.with_structured_output(SentimentUrgency, include_raw=True)
+        runnable = llm.with_structured_output(MasterEnrichmentOutput, include_raw=True)
         result = await runnable.ainvoke(prompt)
         
         data = result['parsed']
         usage = result['raw'].usage_metadata
-
-        result_dict = {
-            "sentimiento": {
-                "etiqueta": data.etiqueta,
-                "puntuacion": data.puntuacion,
-                "justificacion": data.justificacion
+        
+        # Mapeamos los campos a la estructura original para no romper el State
+        return {
+            "intent_analysis": data.intencion.dict(),
+            "sentiment_analysis": {
+                "sentimiento": {
+                    "etiqueta": data.sentimiento_urgencia.etiqueta,
+                    "puntuacion": data.sentimiento_urgencia.puntuacion,
+                    "justificacion": data.sentimiento_urgencia.justificacion
+                },
+                "urgencia": {
+                    "nivel": data.sentimiento_urgencia.urgencia_nivel,
+                    "justificacion": data.sentimiento_urgencia.urgencia_justificacion
+                }
             },
-            "urgencia": {
-                "nivel": data.urgencia_nivel,
-                "justificacion": data.urgencia_justificacion
-            }
-        }
-        return {
-            "sentiment_analysis": result_dict,
+            "classification": {
+                "tipologia_documental": data.clasificacion.tipologia_documental, 
+                "confianza": data.clasificacion.confianza
+            },
+            "tags": data.etiquetas,
             "usage_metadata": usage
         }
     except Exception as e:
-        print(f"!!! Error en sentiment_and_urgency_node: {e}")
-        return {"errors": [f"Error en sentimiento: {e}"]}
-
-async def classify_document_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Clasificación TRD ---")
-    ctx = get_toon_context(state)
-    prompt = f"""
-    Identify the Doc Typology for a Colombian Public Entity (Law 594/2000).
-    Context: {ctx}
-    List: Acto Administrativo, Contrato, Informe, Factura/Cuenta de Cobro, Historia Laboral, Hoja de Vida, Solicitud (PQRS), Tutela, Comunicación Oficial, Póliza, Certificado, Otro.
-    """
-    try:
-        runnable = llm.with_structured_output(ClassificationOutput, include_raw=True)
-        result = await runnable.ainvoke(prompt)
-        
-        data = result['parsed']
-        usage = result['raw'].usage_metadata
-
-        # Sincronizamos con los nombres exactos: tipologia_documental y confianza
-        return {
-            "classification": {"tipologia_documental": data.tipologia_documental, "confianza": data.confianza},
-            "usage_metadata": usage
-        }
-    except Exception as e:
-        print(f"!!! Error en classify_document_node: {e}")
-        return {"errors": [f"Error en clasificación: {e}"]}
-
-async def tag_document_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Generando etiquetas ---")
-    ctx = get_toon_context(state)
-    prompt = f"Generate 5-7 clear, relevant Spanish tags for this document context:\n{ctx}"
-    try:
-        runnable = llm.with_structured_output(TagsOutput, include_raw=True)
-        result = await runnable.ainvoke(prompt)
-        
-        data = result['parsed']
-        usage = result['raw'].usage_metadata
-
-        return {
-            "tags": data.tags,
-            "usage_metadata": usage
-        }
-    except Exception as e:
-        print(f"!!! Error en tag_document_node: {e}")
-        return {"errors": [f"Error en etiquetas: {e}"]}
+        print(f"!!! Error en master_enrichment_node: {e}")
+        return {"errors": [f"Error en enriquecimiento maestro: {e}"]}
 
 async def extract_entities_node(state: DocumentState) -> DocumentState:
     print("--- Worker (Expert): Extracción de Entidades ---")
@@ -462,8 +420,11 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     print("--- Worker (Expert): Conformidad Archivística (Acuerdo 060) ---")
     ctx = get_toon_context(state)
     prompt = f"""
-    Verify archival compliance based on Acuerdo 060 de 2001 (AGN).
-    CHECKPOINTS:
+    Act as an Archival Compliance Officer. Verify compliance based on Acuerdo 060 de 2001 (AGN).
+    
+    CONTEXT: {ctx}
+    
+    CHECKLIST:
     1. Sender Identification (Clear name/contact).
     2. Recipient correctness.
     3. Purpose/Subject clarity.
@@ -471,8 +432,11 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     5. Legibility.
     6. Annexes mentioned.
     
-    Context: {ctx}
-    Evaluate each point and provide solid archival recommendations for filing (radicación).
+    TASK:
+    - Provide a 'resumen_ejecutivo' that captures the essence of compliance in 2-3 sentences.
+    - Provide an 'analisis_detallado' with specific recommendations for filing (radicación).
+    
+    Be precise, professional, and concise.
     """
     try:
         runnable = llm.with_structured_output(ComplianceOutput, include_raw=True)
@@ -482,7 +446,11 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
         usage = result['raw'].usage_metadata
 
         return {
-            "compliance_analysis": data.dict(),
+            "compliance_analysis": {
+                "cumple_normativa": data.cumple_normativa,
+                "resumen": data.resumen_ejecutivo,
+                "detalles": data.analisis_detallado
+            },
             "usage_metadata": usage
         }
     except Exception as e:

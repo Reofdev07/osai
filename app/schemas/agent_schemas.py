@@ -62,7 +62,14 @@ class PriorityOutput(BaseModel):
 
 class ComplianceOutput(BaseModel):
     cumple_normativa: bool
-    comentarios: str = Field(description="Verificación detallada y recomendaciones.")
+    resumen_ejecutivo: str = Field(description="Resumen conciso del cumplimiento (2-3 oraciones).")
+    analisis_detallado: str = Field(description="Verificación detallada por puntos y recomendaciones archivísticas.")
+
+class MasterEnrichmentOutput(BaseModel):
+    intencion: IntentAnalysis
+    sentimiento_urgencia: SentimentUrgency
+    clasificacion: ClassificationOutput
+    etiquetas: List[str] = Field(description="Lista de 5-7 etiquetas descriptivas en español.")
 
 class TagsOutput(BaseModel):
     tags: List[str] = Field(description="Lista de 5-7 etiquetas descriptivas en español.")

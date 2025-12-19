@@ -15,10 +15,7 @@ from app.graphs.nodes.documents_analysis_nodes import (
     update_llama_parse_usage_node,
     unsupported_file_node,
     summarize_and_get_subject_node,
-    intent_detection_node,
-    sentiment_and_urgency_node,
-    classify_document_node,
-    tag_document_node,
+    master_enrichment_node,
     extract_entities_node,
     priority_assignment_node,
     compliance_analysis_node
@@ -45,10 +42,7 @@ workflow.add_node("update_usage_counter", update_llama_parse_usage_node)
 
 # Nodos de análisis de contenido
 workflow.add_node("summarize", summarize_and_get_subject_node)
-workflow.add_node("intent_detection", intent_detection_node)
-workflow.add_node("sentiment_and_urgency", sentiment_and_urgency_node)
-workflow.add_node("classify", classify_document_node)
-workflow.add_node("tag", tag_document_node)
+workflow.add_node("master_enrichment", master_enrichment_node)
 workflow.add_node("extract_entities", extract_entities_node)
 workflow.add_node("priority_assignment", priority_assignment_node)
 workflow.add_node("compliance_analysis", compliance_analysis_node)
@@ -103,10 +97,7 @@ workflow.add_edge("update_usage_counter", "summarize")
 # El resumen nos sirve de contexto (vía TOON) para los demás nodos.
 # Pero los demás no dependen entre sí.
 analysis_nodes = [
-    "intent_detection", 
-    "sentiment_and_urgency", 
-    "classify", 
-    "tag", 
+    "master_enrichment", 
     "extract_entities", 
     "priority_assignment", 
     "compliance_analysis"
