@@ -101,41 +101,68 @@ async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
 
 # Opción OCR 1: Google Vision
 async def extract_with_google_vision_node(state: DocumentState) -> DocumentState:
-    """Realiza OCR usando la API de Google Cloud Vision."""
-    print("--- Worker: Realizando OCR con Google Vision ---")
+    """
+    Realiza OCR usando la API de Google Cloud Vision con optimización para documentos.
+    Usa 'document_text_detection' que es superior para documentos con párrafos y tablas.
+    """
+    print("--- Worker (Expert): Realizando OCR con Google Vision (Document Analysis) ---")
     file_path = state["file_path"]
-    job_id = state["job_id"]
+    job_id = state.get("job_id", "N/A")
+    
+    # El cliente se instancia una vez por llamada al nodo.
+    # Google Cloud Vision detecta automáticamente las credenciales de os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
     client = vision.ImageAnnotatorClient()
+    
     try:
         mime_type = puremagic.from_file(file_path, mime=True)
         extracted_content = ""
         page_count = 0
+        
         if "pdf" in mime_type:
             all_text_pages = []
             with fitz.open(file_path) as doc:
                 page_count = doc.page_count
-                if page_count == 0: return {"error": "El PDF para OCR está vacío."}
+                if page_count == 0: 
+                    return {"error": "El PDF para OCR está vacío.", "extraction_pages": 0}
+                
                 for i, page in enumerate(doc):
                     print(f"Job [{job_id}]: Procesando página {i+1}/{page_count} con Google Vision...")
+                    # Renderizado a alta calidad para mejor OCR
                     pix = page.get_pixmap(dpi=300)
                     image_bytes = pix.tobytes("png")
                     image = vision.Image(content=image_bytes)
-                    response = client.text_detection(image=image)
-                    if response.error.message: raise Exception(f"API Error pág {i+1}: {response.error.message}")
-                    if response.full_text_annotation: all_text_pages.append(response.full_text_annotation.text)
+                    
+                    # 'document_text_detection' es mejor para documentos que 'text_detection'
+                    response = client.document_text_detection(image=image)
+                    
+                    if response.error.message:
+                        raise Exception(f"API Error pág {i+1}: {response.error.message}")
+                    
+                    if response.full_text_annotation:
+                        all_text_pages.append(response.full_text_annotation.text)
+            
             extracted_content = "\n\n--- Nueva Página ---\n\n".join(all_text_pages)
+            
         elif "image" in mime_type:
             page_count = 1
             print(f"Job [{job_id}]: Procesando archivo de imagen con Google Vision...")
-            with open(file_path, "rb") as image_file: content_bytes = image_file.read()
+            with open(file_path, "rb") as image_file:
+                content_bytes = image_file.read()
+            
             image = vision.Image(content=content_bytes)
-            response = client.text_detection(image=image)
-            if response.error.message: raise Exception(f"API Error: {response.error.message}")
-            if response.full_text_annotation: extracted_content = response.full_text_annotation.text
+            response = client.document_text_detection(image=image)
+            
+            if response.error.message:
+                raise Exception(f"API Error: {response.error.message}")
+            
+            if response.full_text_annotation:
+                extracted_content = response.full_text_annotation.text
         else:
             return {"error": f"Tipo de archivo no soportado para Google Vision: {mime_type}"}
+        
         token_count = count_tokens(extracted_content)
-        print(f"Job [{job_id}]: Extracción con Google Vision finalizada. Páginas: {page_count}, Tokens: {token_count}")
+        print(f"Job [{job_id}]: Extracción con Google Vision finalizada. Páginas: {page_count}")
+        
         return {
             "raw_text": extracted_content, 
             "page_count": page_count, 
@@ -145,9 +172,9 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
             "extraction_pages": page_count
         }
     except Exception as e:
-        error_message = f"Error inesperado en Google Vision: {e}"
+        error_message = f"Error crítico en Google Vision: {e}"
         print(f"Job [{job_id}]: {error_message}")
-        return {"error": error_message}
+        return {"error": error_message, "extraction_pages": page_count or 0}
 
 # Opción OCR 2: LlamaParse
 async def extract_with_llama_parse_node(state: DocumentState) -> DocumentState:
