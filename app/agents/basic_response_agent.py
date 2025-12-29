@@ -1,4 +1,6 @@
+import json
 from langchain_core.messages import HumanMessage, SystemMessage
+
 from app.core.llm import create_llm
 
 
@@ -36,18 +38,18 @@ async def basic_response_agent(context_payload: dict):
             if chunk.usage_metadata:
                 usage = chunk.usage_metadata
             if chunk.content:
-                yield chunk.content
+                yield json.dumps({"type": "content", "content": chunk.content}, ensure_ascii=False) + "\n"
         
-        # Opcional: marcador para Laravel si se usa este agente en streaming
+        # Formato NDJSON para metadata
         if usage:
-            import json
             usage_data = {
                 "input_tokens": usage.get("input_tokens", 0) if isinstance(usage, dict) else getattr(usage, "input_tokens", 0),
                 "output_tokens": usage.get("output_tokens", 0) if isinstance(usage, dict) else getattr(usage, "output_tokens", 0),
                 "total_tokens": usage.get("total_tokens", 0) if isinstance(usage, dict) else getattr(usage, "total_tokens", 0)
             }
-            yield f"\n[USAGE_METADATA]:{json.dumps(usage_data)}"
+            yield json.dumps({"type": "usage", "data": usage_data}, ensure_ascii=False) + "\n"
 
     except Exception as e:
-        yield f"[ERROR: {str(e)}]"
+        yield json.dumps({"type": "error", "content": str(e)}, ensure_ascii=False) + "\n"
+
     
