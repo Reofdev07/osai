@@ -13,6 +13,7 @@ from langchain_community.document_loaders import PyMuPDFLoader
 from google.cloud import vision
 from llama_parse import LlamaParse
 from llama_index.core import SimpleDirectoryReader
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # --- Imports de tu propio proyecto ---
 from app.schemas.graph_state import DocumentState
@@ -20,7 +21,7 @@ from app.utils.token_counter import count_tokens, update_usage_metadata
 from app.utils.toon_helper import get_toon_context
 from app.core.llm import create_llm
 from app.core.config import settings
-from app.core.database import DB_FILE  # Importa la ruta centralizada de la DB
+from app.core.database import DB_FILE, get_db_connection  # Importa la ruta y el getter
 from app.schemas.agent_schemas import (
     ExtractionSummary, IntentAnalysis, SentimentUrgency, 
     ClassificationOutput, EntitiesOutput, PriorityOutput, ComplianceOutput, TagsOutput,
@@ -32,6 +33,15 @@ LLAMA_PARSE_FREE_LIMIT_WEEKLY = 7000
 CONTEXT_WINDOW_LIMIT = 300000 # ~75k tokens, suficiente para documentos largos
 llm = create_llm()
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.GOOGLE_APPLICATION_CREDENTIALS
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    reraise=True
+)
+async def _invoke_llm_with_retry(runnable, prompt):
+    """Wrapper con reintentos para llamadas al LLM."""
+    return await runnable.ainvoke(prompt)
 
 # === NODO 1: RUTA DE ENTRADA ===
 async def analyze_and_route_node(state: DocumentState) -> DocumentState:
@@ -222,7 +232,9 @@ async def extract_with_llama_parse_node(state: DocumentState) -> DocumentState:
     except Exception as e:
         error_message = f"Error en LlamaParse asíncrono: {e}"
         print(f"Job [{job_id}]: {error_message}")
-        return {"error": error_message}
+        print(f"Job [{job_id}]: Iniciando Fallback a Google Vision...")
+        # Fallback a Google Vision
+        return await extract_with_google_vision_node(state)
 
 # === NODOS DEL ORQUESTADOR ADAPTATIVO ===
 
@@ -273,7 +285,7 @@ async def adaptive_ocr_orchestrator_node(state: DocumentState) -> DocumentState:
     """Decide qué proveedor usar basándose en el contador de SQLite."""
     print("--- Orquestador Adaptativo: Tomando decisión de OCR ---")
     pages_to_process = state.get("page_count_for_decision", 1)
-    with sqlite3.connect(DB_FILE) as conn:
+    with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM settings WHERE key = 'llama_parse_reset_timestamp'")
         last_reset_time = datetime.fromisoformat(cursor.fetchone()[0])
@@ -298,7 +310,7 @@ async def update_llama_parse_usage_node(state: DocumentState) -> DocumentState:
     method = state.get("extraction_method")
     
     if pages_processed > 0:
-        with sqlite3.connect(DB_FILE) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             if method == "llama_parse":
                 cursor.execute("UPDATE settings SET value = CAST(value AS INTEGER) + ? WHERE key = 'llama_parse_usage'", (pages_processed,))
@@ -339,7 +351,7 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     try:
         # Usamos include_raw=True para capturar la metadata de tokens
         runnable = llm.with_structured_output(ExtractionSummary, include_raw=True)
-        result = await runnable.ainvoke(prompt)
+        result = await _invoke_llm_with_retry(runnable, prompt)
         
         data = result['parsed']
         usage = result['raw'].usage_metadata
@@ -384,7 +396,7 @@ async def master_enrichment_node(state: DocumentState) -> DocumentState:
     
     try:
         runnable = llm.with_structured_output(MasterEnrichmentOutput, include_raw=True)
-        result = await runnable.ainvoke(prompt)
+        result = await _invoke_llm_with_retry(runnable, prompt)
         
         data = result['parsed']
         usage = result['raw'].usage_metadata
@@ -430,7 +442,7 @@ async def extract_entities_node(state: DocumentState) -> DocumentState:
     """
     try:
         runnable = llm.with_structured_output(EntitiesOutput, include_raw=True)
-        result = await runnable.ainvoke(prompt)
+        result = await _invoke_llm_with_retry(runnable, prompt)
         
         data = result['parsed']
         usage = result['raw'].usage_metadata
@@ -463,7 +475,7 @@ async def priority_assignment_node(state: DocumentState) -> DocumentState:
     """
     try:
         runnable = llm.with_structured_output(PriorityOutput, include_raw=True)
-        result = await runnable.ainvoke(prompt)
+        result = await _invoke_llm_with_retry(runnable, prompt)
         
         data = result['parsed']
         usage = result['raw'].usage_metadata
@@ -500,7 +512,7 @@ async def compliance_analysis_node(state: DocumentState) -> DocumentState:
     """
     try:
         runnable = llm.with_structured_output(ComplianceOutput, include_raw=True)
-        result = await runnable.ainvoke(prompt)
+        result = await _invoke_llm_with_retry(runnable, prompt)
         
         data = result['parsed']
         usage = result['raw'].usage_metadata

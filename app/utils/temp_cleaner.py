@@ -37,3 +37,17 @@ def cleanup_stale_temp_files(max_age_minutes: int = 60):
         print(f"✅ Limpieza completada: Se eliminaron {deleted_count} archivos antiguos.")
     else:
         print("✅ Limpieza completada: El disco ya estaba limpio (0 archivos borrados).")
+
+    # --- Limpieza de webhooks pendientes con más de 24 horas ---
+    webhook_dir = os.path.join("data", "pending_webhooks")
+    if os.path.exists(webhook_dir):
+        webhook_deleted = 0
+        for filepath in glob.glob(os.path.join(webhook_dir, "*.json")):
+            try:
+                if (current_time - os.path.getmtime(filepath)) > 86400:  # 24 horas
+                    os.remove(filepath)
+                    webhook_deleted += 1
+            except Exception:
+                pass
+        if webhook_deleted > 0:
+            print(f"✅ Webhooks pendientes limpiados: {webhook_deleted} archivos eliminados (>24h).")
