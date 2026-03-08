@@ -61,6 +61,10 @@ app.add_middleware(
 # Es seguro gracias a la idempotencia.
 print("Iniciando aplicación, verificando estado de la base de datos...")
 initialize_database()
+
+from app.utils.temp_cleaner import cleanup_stale_temp_files
+cleanup_stale_temp_files(max_age_minutes=60) # Limpieza activa de basura en cada reinicio
+
 print("Inicialización completada. La aplicación está lista.")
 
 app.include_router(base_router)

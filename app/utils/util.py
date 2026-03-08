@@ -56,24 +56,42 @@ async def process_document_graph(file_path: str, job_id: str):
 
             # Lógica de notificación centralizada
             description = step_descriptions.get(node_name, f"Procesando {node_name}...")
+            
+            status = "processing"
+            
+            # Manejo de errores amigable para la UI de Laravel
+            if step_output.get("error"):
+                status = "failed"
+                step_output["user_message"] = f"Aviso técnico al extraer '{description}'. El documento continuará procesándose de forma segura."
+            elif step_output.get("errors") and len(step_output["errors"]) > 0:
+                status = "failed"
+                step_output["user_message"] = f"Se encontraron dificultades analizando '{description}'. Los datos mostrados podrían ser parciales."
 
             await notify_steps_to_laravel(
                 job_id=job_id,
                 node_name=node_name,
-                status="failed" if "error" in step_output else "processing",
+                status=status,
                 data=step_output,
                 step=description
             )
 
     final_state = accumulated_state
     
+    # Evaluación del estado final para enviar alertas claras
+    final_status = "finished"
+    final_message = "Proceso completado."
+    
+    if final_state.get("error") or (final_state.get("errors") and len(final_state["errors"]) > 0):
+        final_status = "finished_with_errors"
+        final_message = "Análisis finalizado (con datos parciales debido a formatos irregulares)."
+    
     # Notificación final con el estado completo
     await notify_steps_to_laravel(
         job_id=job_id,
         node_name="graph_process",
-        status="finished",
+        status=final_status,
         data=final_state,
-        step="Proceso completado."
+        step=final_message
     )
 
     print(f"✅ Job [{job_id}]: Proceso del grafo completado.")
