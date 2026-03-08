@@ -179,49 +179,37 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
 # Opción OCR 2: LlamaParse
 async def extract_with_llama_parse_node(state: DocumentState) -> DocumentState:
     """
-    Realiza OCR y parsing usando el método verificado de parser.load_data().
-    Esta función está adaptada para funcionar de forma asíncrona dentro del grafo.
+    Realiza OCR y parsing usando el método asíncrono nativo aload_data().
     """
-    print("--- Worker: Extrayendo con LlamaParse (usando lógica verificada) ---")
+    print("--- Worker: Extrayendo con LlamaParse (Modo Asíncrono Nativo) ---")
     file_path = state["file_path"]
     job_id = state.get("job_id", "N/A")
 
     try:
-        # 1. Configurar el parser como en tu script funcional.
+        # 1. Configurar el parser
         parser = LlamaParse(
             api_key=settings.LLAMA_CLOUD_API_KEY,
-            result_type="markdown",  # Mantenemos markdown por su riqueza estructural
+            result_type="markdown",
             verbose=True
         )
 
-        # 2. La llamada a parser.load_data() es síncrona (bloqueante).
-        # Para evitar que congele toda nuestra aplicación asíncrona, debemos
-        # ejecutarla en un "executor", que es la forma correcta de manejar esto.
-        loop = asyncio.get_event_loop()
+        # 2. Llamada asíncrona nativa (más eficiente que executors)
+        print(f"Job [{job_id}]: Llamando a parser.aload_data() para: {file_path}")
+        parsed_docs = await parser.aload_data([file_path])
 
-        def parse_document_sync():
-            # Esta es la línea clave de TU código funcional.
-            print(f"Job [{job_id}]: Llamando a parser.load_data() para el archivo: {file_path}")
-            documents = parser.load_data([file_path])
-            return documents
-
-        # Ejecutamos la función síncrona en un hilo separado y esperamos el resultado.
-        parsed_docs = await loop.run_in_executor(None, parse_document_sync)
-
-        # 3. Procesar el resultado para que encaje en el estado del grafo.
+        # 3. Procesar el resultado
         if not parsed_docs:
             return {"error": "LlamaParse no devolvió ningún documento."}
 
-        # Unimos el contenido de todos los documentos parseados.
+        # Unimos el contenido
         extracted_content = "\n\n".join([doc.get_content() for doc in parsed_docs])
         
-        # Obtenemos las métricas como antes.
+        # Métricas
         page_count = parsed_docs[0].metadata.get('total_pages', 1) if parsed_docs[0].metadata else state.get("page_count_for_decision", 1)
         token_count = count_tokens(extracted_content)
 
-        print(f"Job [{job_id}]: Extracción con LlamaParse finalizada. Páginas: {page_count}, Tokens: {token_count}")
+        print(f"Job [{job_id}]: Extracción finalizada. Páginas: {page_count}, Tokens: {token_count}")
 
-        # 4. Devolver el diccionario para actualizar el estado del grafo.
         return {
             "raw_text": extracted_content,
             "page_count": page_count,
@@ -232,10 +220,8 @@ async def extract_with_llama_parse_node(state: DocumentState) -> DocumentState:
         }
 
     except Exception as e:
-        error_message = f"Error inesperado durante la extracción con LlamaParse: {e}"
+        error_message = f"Error en LlamaParse asíncrono: {e}"
         print(f"Job [{job_id}]: {error_message}")
-        import traceback
-        traceback.print_exc() # Imprime el traceback completo para más detalles
         return {"error": error_message}
 
 # === NODOS DEL ORQUESTADOR ADAPTATIVO ===

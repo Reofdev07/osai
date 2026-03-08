@@ -11,9 +11,9 @@ load_dotenv()
 # Configuración de Rate Limiter (Gemini Free: 15 RPM -> 1 peticion cada 4 segs)
 # Esto permite paralelizacion en el grafo sin bloquear el API.
 rate_limiter = InMemoryRateLimiter(
-    requests_per_second=0.25, 
+    requests_per_second=1.0, # Aumentado de 0.25 a 1.0 para mayor velocidad (1 peticion/seg)
     check_every_n_seconds=0.1, 
-    max_bucket_size=1
+    max_bucket_size=2 # Aumentado para permitir ráfagas pequeñas iniciales
 )
 
 
