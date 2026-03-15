@@ -10,8 +10,8 @@ import asyncio
 from urllib.parse import urlparse
 
 
-from  ..graphs.documents_analysis_graph import app_graph
-from ..utils.notifications import notify_steps_to_laravel
+from ..graphs.documents_analysis_graph import app_graph
+from .notifications import notify_steps_to_laravel
 
 
 # En tu archivo principal (donde llamas al grafo)
@@ -32,6 +32,7 @@ async def process_document_graph(file_path: str, job_id: str):
         "scanned_pdf": "Procesando con OCR",
         "image": "Procesando imagen con OCR",
         "summarize": "Resumiendo y extrayendo asunto",
+        "mega_analysis": "Analizando globalmente (Clasificación, Entidades, Prioridad y Cumplimiento)",
         "intent_detection_node": "Detectando intención",
         "sentiment_and_urgency_node": "Analizando tono y urgencia",
         "classify": "Clasificando documento",
@@ -50,8 +51,8 @@ async def process_document_graph(file_path: str, job_id: str):
         for node_name, step_output in step.items():
             print(f"Job [{job_id}]: Progreso -> Nodo '{node_name}' completado.")
             
-            # Aseguramos que step_output sea un diccionario para el update
-            step_output = step_output or {}
+            # Aseguramos que step_output sea un diccionario mutable
+            step_output = dict(step_output) if step_output else {}
             accumulated_state.update(step_output)
 
             # Lógica de notificación centralizada
@@ -62,10 +63,10 @@ async def process_document_graph(file_path: str, job_id: str):
             # Manejo de errores amigable para la UI de Laravel
             if step_output.get("error"):
                 status = "failed"
-                step_output["user_message"] = f"Aviso técnico al extraer '{description}'. El documento continuará procesándose de forma segura."
+                step_output.update({"user_message": f"Aviso técnico al extraer '{description}'. El documento continuará procesándose de forma segura."})
             elif step_output.get("errors") and len(step_output["errors"]) > 0:
                 status = "failed"
-                step_output["user_message"] = f"Se encontraron dificultades analizando '{description}'. Los datos mostrados podrían ser parciales."
+                step_output.update({"user_message": f"Se encontraron dificultades analizando '{description}'. Los datos mostrados podrían ser parciales."})
 
             await notify_steps_to_laravel(
                 job_id=job_id,
@@ -143,7 +144,7 @@ async def stream_download_file(url: str, job_id: str):
                 return
 
             # Crear una ruta de archivo temporal SEGURA y CON la extensión correcta.
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension, prefix="osai_") as temp_file:
                 temp_file_path = temp_file.name
 
             print(f"📥 Job [{job_id}]: Se usará el archivo temporal: {temp_file_path}")

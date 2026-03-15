@@ -73,3 +73,12 @@ class MasterEnrichmentOutput(BaseModel):
 
 class TagsOutput(BaseModel):
     tags: List[str] = Field(description="Lista de 5-7 etiquetas descriptivas en español.")
+
+class MegaEnrichmentOutput(BaseModel):
+    intencion: IntentAnalysis
+    sentimiento_urgencia: SentimentUrgency
+    clasificacion: ClassificationOutput
+    etiquetas: List[str] = Field(description="Lista de 5-7 etiquetas descriptivas en español.")
+    entidades: EntitiesOutput
+    prioridad: PriorityOutput
+    conformidad: ComplianceOutput

@@ -15,10 +15,7 @@ from app.graphs.nodes.documents_analysis_nodes import (
     update_llama_parse_usage_node,
     unsupported_file_node,
     summarize_and_get_subject_node,
-    master_enrichment_node,
-    extract_entities_node,
-    priority_assignment_node,
-    compliance_analysis_node
+    mega_analysis_node
 )
 
 # Importa la función de enrutamiento del archivo de edges.
@@ -42,10 +39,7 @@ workflow.add_node("update_usage_counter", update_llama_parse_usage_node)
 
 # Nodos de análisis de contenido
 workflow.add_node("summarize", summarize_and_get_subject_node)
-workflow.add_node("master_enrichment", master_enrichment_node)
-workflow.add_node("extract_entities", extract_entities_node)
-workflow.add_node("priority_assignment", priority_assignment_node)
-workflow.add_node("compliance_analysis", compliance_analysis_node)
+workflow.add_node("mega_analysis", mega_analysis_node)
 
 # Nodos finales
 workflow.add_node("unsupported", unsupported_file_node)
@@ -93,20 +87,10 @@ workflow.add_edge("text_pdf", "summarize")
 workflow.add_edge("google_vision", "summarize")
 workflow.add_edge("update_usage_counter", "summarize")
 
-# --- FAN-OUT: Lanzar múltiples análisis en paralelo después del resumen ---
-# El resumen nos sirve de contexto (vía TOON) para los demás nodos.
-# Pero los demás no dependen entre sí.
-analysis_nodes = [
-    "master_enrichment", 
-    "extract_entities", 
-    "priority_assignment", 
-    "compliance_analysis"
-]
-
-for node in analysis_nodes:
-    workflow.add_edge("summarize", node)
-    # FAN-IN: Todos apuntan al final (o a un nodo agregador si fuera necesario)
-    workflow.add_edge(node, END)
+# --- MEGA-ANALYSIS: Un solo nodo consolidado en vez de múltiples paralelos ---
+# El resumen nos sirve de contexto (vía TOON) para el mega-nodo.
+workflow.add_edge("summarize", "mega_analysis")
+workflow.add_edge("mega_analysis", END)
 
 # Definir los puntos finales del grafo
 workflow.add_edge("unsupported", END)         # Final para archivos no soportados
