@@ -1,6 +1,6 @@
 import json
 from app.core.llm import create_llm
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, trim_messages
 
 llm = create_llm()
 
@@ -125,18 +125,28 @@ async def expert_chat_stream_generator(full_payload: dict):
 
         """
     
-    # Preparamos el historial de mensajes para LangChain
-    messages_for_llm = [SystemMessage(content=system_prompt)]
-
-    # Añadimos el historial de chat, convirtiéndolo al formato de LangChain
+    # 1. Construir la lista completa de mensajes
+    raw_messages = [SystemMessage(content=system_prompt)]
     for msg in full_payload.get('messages', []):
         content = msg.get('content') or ""
         if msg['role'] == 'user':
-            messages_for_llm.append(HumanMessage(content=content))
+            raw_messages.append(HumanMessage(content=content))
         elif msg['role'] == 'assistant':
-            messages_for_llm.append(AIMessage(content=content))
+            raw_messages.append(AIMessage(content=content))
+
+    # 2. Aplicar trim_messages (Estrategia oficial de LangChain)
+    # Usamos max_tokens=7 (System + 6 mensajes) con token_counter=len para simular conteo de mensajes
+    # Aseguramos que siempre empiece con un mensaje del Humano para la coherencia del modelo.
+    messages_for_llm = trim_messages(
+        raw_messages,
+        strategy="last",
+        token_counter=len,
+        max_tokens=7,
+        start_on="human",
+        include_system=True,
+    )
             
-    # Llamamos al LLM con el contexto completo (System Prompt + Historial)
+    # Llamamos al LLM con el contexto optimizado (System Prompt + Historial Recortado)
     response_stream = llm.astream(messages_for_llm)
 
     final_usage = None
