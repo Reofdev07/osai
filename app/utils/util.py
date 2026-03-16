@@ -45,6 +45,7 @@ async def process_document_graph(file_path: str, job_id: str):
     }
 
     accumulated_state = initial_state.copy()
+    background_tasks = set()
 
     async for step in app_graph.astream(initial_state):
         
@@ -68,13 +69,16 @@ async def process_document_graph(file_path: str, job_id: str):
                 status = "failed"
                 step_output.update({"user_message": f"Se encontraron dificultades analizando '{description}'. Los datos mostrados podrían ser parciales."})
 
-            await notify_steps_to_laravel(
+            # Notificación en segundo plano (Fire-and-forget)
+            task = asyncio.create_task(notify_steps_to_laravel(
                 job_id=job_id,
                 node_name=node_name,
                 status=status,
                 data=step_output,
                 step=description
-            )
+            ))
+            background_tasks.add(task)
+            task.add_done_callback(background_tasks.discard)
 
     final_state = accumulated_state
     
@@ -87,19 +91,22 @@ async def process_document_graph(file_path: str, job_id: str):
         final_message = "Análisis finalizado (con datos parciales debido a formatos irregulares)."
     
     # Notificación final con el estado completo
-    await notify_steps_to_laravel(
+    final_task = asyncio.create_task(notify_steps_to_laravel(
         job_id=job_id,
         node_name="graph_process",
         status=final_status,
         data=final_state,
         step=final_message
-    )
+    ))
+    background_tasks.add(final_task)
+    final_task.add_done_callback(background_tasks.discard)
+
+    # Esperar un tiempo razonable a que terminen las notificaciones de fondo antes de retornar
+    if background_tasks:
+        print(f"⏳ Job [{job_id}]: Esperando a que terminen {len(background_tasks)} notificaciones pendientes...")
+        await asyncio.wait(background_tasks, timeout=3.0)
 
     print(f"✅ Job [{job_id}]: Proceso del grafo completado.")
-    print("--- ESTADO FINAL CONSOLIDADO ---")
-    print(json.dumps(final_state, indent=2, ensure_ascii=False))
-    print("---------------------------------")
-
     return final_state
     
 

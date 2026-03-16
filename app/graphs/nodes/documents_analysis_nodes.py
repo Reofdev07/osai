@@ -350,8 +350,10 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     """
     try:
         # Usamos include_raw=True para capturar la metadata de tokens
+        print(f"📡 Enviando prompt al LLM...")
         runnable = llm.with_structured_output(ExtractionSummary, include_raw=True)
         result = await _invoke_llm_with_retry(runnable, prompt)
+        print(f"✅ Respuesta recibida del LLM.")
         
         data = result['parsed']
         usage = result['raw'].usage_metadata
