@@ -8,6 +8,13 @@ import os
 DATA_DIR = "data"
 DB_FILE = os.path.join(DATA_DIR, "app_state.db")
 
+def get_db_connection():
+    """Retorna una conexión segura a SQLite habilitando concurrencia."""
+    # timeout=10 soluciona el problema de retención de locks breves
+    conn = sqlite3.connect(DB_FILE, timeout=10.0)
+    conn.execute("PRAGMA journal_mode=WAL") # Permite leer y escribir simultáneamente
+    return conn
+
 def initialize_database():
     """
     Función idempotente para inicializar la base de datos.
@@ -17,7 +24,7 @@ def initialize_database():
         # Asegurarse de que el directorio de datos exista
         os.makedirs(DATA_DIR, exist_ok=True)
         
-        with sqlite3.connect(DB_FILE) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             
             # 1. Crear la tabla de configuración si no existe.
@@ -34,6 +41,8 @@ def initialize_database():
             # No sobrescribirá el contador actual si la aplicación se reinicia.
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
                            ("llama_parse_usage", "0"))
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
+                           ("google_vision_usage", "0"))
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
                            ("llama_parse_reset_timestamp", datetime.now().isoformat()))
             

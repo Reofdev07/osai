@@ -13,44 +13,77 @@ from langchain_community.document_loaders import PyMuPDFLoader
 from google.cloud import vision
 from llama_parse import LlamaParse
 from llama_index.core import SimpleDirectoryReader
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # --- Imports de tu propio proyecto ---
 from app.schemas.graph_state import DocumentState
-from app.utils.token_counter import count_tokens
+from app.utils.token_counter import count_tokens, update_usage_metadata
 from app.utils.toon_helper import get_toon_context
 from app.core.llm import create_llm
 from app.core.config import settings
-from app.core.database import DB_FILE  # Importa la ruta centralizada de la DB
+from app.core.database import DB_FILE, get_db_connection  # Importa la ruta y el getter
 from app.schemas.agent_schemas import (
     ExtractionSummary, IntentAnalysis, SentimentUrgency, 
-    ClassificationOutput, EntitiesOutput, PriorityOutput, ComplianceOutput, TagsOutput
+    ClassificationOutput, EntitiesOutput, PriorityOutput, ComplianceOutput, TagsOutput,
+    MasterEnrichmentOutput, MegaEnrichmentOutput
 )
 
 # --- CONFIGURACIÓN GLOBAL PARA LOS NODOS ---
 LLAMA_PARSE_FREE_LIMIT_WEEKLY = 7000
+CONTEXT_WINDOW_LIMIT = 300000 # ~75k tokens, suficiente para documentos largos
 llm = create_llm()
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.GOOGLE_APPLICATION_CREDENTIALS
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    reraise=True
+)
+async def _invoke_llm_with_retry(runnable, prompt):
+    """Wrapper con reintentos para llamadas al LLM."""
+    return await runnable.ainvoke(prompt)
 
 # === NODO 1: RUTA DE ENTRADA ===
 async def analyze_and_route_node(state: DocumentState) -> DocumentState:
     """Analiza el tipo de archivo y decide la ruta inicial: texto, OCR o no soportado."""
     print("--- Nodo: Analizando tipo de archivo ---")
     file_path = state["file_path"]
-    TEXT_THRESHOLD = 20
-    # mime_type = magic.from_file(file_path, mime=True)
+    
+    # Umbrales mejorados
+    TEXT_RATIO_THRESHOLD = 100 # Promedio de caracteres por página para ser "pdf_text"
+    MAX_PAGES_TO_SAMPLE = 3
+    
     mime_type = puremagic.from_file(file_path, mime=True)
     
     if "pdf" in mime_type:
         try:
             with fitz.open(file_path) as doc:
-                if doc.page_count == 0: return {"file_type": "unsupported"}
-                page = doc.load_page(0)
-                text = page.get_text()
-            return {"file_type": "pdf_text"} if len(text) > TEXT_THRESHOLD else {"file_type": "pdf_scanned"}
-        except Exception:
+                page_count = doc.page_count
+                if page_count == 0: 
+                    return {"file_type": "unsupported", "error": "PDF sin páginas"}
+                
+                # Analizamos una muestra (primeras 3 páginas) para decidir
+                sample_text_length = 0
+                pages_to_check = min(page_count, MAX_PAGES_TO_SAMPLE)
+                
+                for i in range(pages_to_check):
+                    page = doc.load_page(i)
+                    sample_text_length += len(page.get_text().strip())
+                
+                avg_text = sample_text_length / pages_to_check
+                
+                if avg_text > TEXT_RATIO_THRESHOLD:
+                    print(f"--- Decisión: PDF Nativo (Promedio texto: {avg_text:.2f}) ---")
+                    return {"file_type": "pdf_text", "page_count": page_count}
+                else:
+                    print(f"--- Decisión: PDF Escaneado (Promedio texto: {avg_text:.2f}) ---")
+                    return {"file_type": "pdf_scanned", "page_count": page_count}
+                    
+        except Exception as e:
+            print(f"Error analizando PDF: {e}")
             return {"file_type": "pdf_scanned"}
     elif "image" in mime_type:
-        return {"file_type": "image"}
+        return {"file_type": "image", "page_count": 1}
     else:
         return {"file_type": "unsupported"}
 
@@ -66,112 +99,142 @@ async def extract_from_text_pdf_node(state: DocumentState) -> DocumentState:
         content = "".join([doc.page_content for doc in docs])
         page_count = len(docs)
         token_count = count_tokens(content)
-        return {"raw_text": content, "page_count": page_count, "token_count": token_count}
+        return {
+            "raw_text": content, 
+            "page_count": page_count, 
+            "token_count": token_count,
+            "extraction_method": "native_pdf",
+            "extraction_pages": page_count
+        }
     except Exception as e:
         return {"error": f"Error extrayendo texto de PDF: {e}"}
 
 # Opción OCR 1: Google Vision
 async def extract_with_google_vision_node(state: DocumentState) -> DocumentState:
-    """Realiza OCR usando la API de Google Cloud Vision."""
-    print("--- Worker: Realizando OCR con Google Vision ---")
+    """
+    Realiza OCR usando la API de Google Cloud Vision con optimización para documentos.
+    Usa 'document_text_detection' que es superior para documentos con párrafos y tablas.
+    """
+    print("--- Worker (Expert): Realizando OCR con Google Vision (Document Analysis) ---")
     file_path = state["file_path"]
-    job_id = state["job_id"]
+    job_id = state.get("job_id", "N/A")
+    
+    # El cliente se instancia una vez por llamada al nodo.
+    # Google Cloud Vision detecta automáticamente las credenciales de os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
     client = vision.ImageAnnotatorClient()
+    
     try:
         mime_type = puremagic.from_file(file_path, mime=True)
         extracted_content = ""
         page_count = 0
+        
         if "pdf" in mime_type:
             all_text_pages = []
             with fitz.open(file_path) as doc:
                 page_count = doc.page_count
-                if page_count == 0: return {"error": "El PDF para OCR está vacío."}
+                if page_count == 0: 
+                    return {"error": "El PDF para OCR está vacío.", "extraction_pages": 0}
+                
                 for i, page in enumerate(doc):
                     print(f"Job [{job_id}]: Procesando página {i+1}/{page_count} con Google Vision...")
+                    # Renderizado a alta calidad para mejor OCR
                     pix = page.get_pixmap(dpi=300)
                     image_bytes = pix.tobytes("png")
                     image = vision.Image(content=image_bytes)
-                    response = client.text_detection(image=image)
-                    if response.error.message: raise Exception(f"API Error pág {i+1}: {response.error.message}")
-                    if response.full_text_annotation: all_text_pages.append(response.full_text_annotation.text)
+                    
+                    # 'document_text_detection' es mejor para documentos que 'text_detection'
+                    response = client.document_text_detection(image=image)
+                    
+                    if response.error.message:
+                        raise Exception(f"API Error pág {i+1}: {response.error.message}")
+                    
+                    if response.full_text_annotation:
+                        all_text_pages.append(response.full_text_annotation.text)
+            
             extracted_content = "\n\n--- Nueva Página ---\n\n".join(all_text_pages)
+            
         elif "image" in mime_type:
             page_count = 1
             print(f"Job [{job_id}]: Procesando archivo de imagen con Google Vision...")
-            with open(file_path, "rb") as image_file: content_bytes = image_file.read()
+            with open(file_path, "rb") as image_file:
+                content_bytes = image_file.read()
+            
             image = vision.Image(content=content_bytes)
-            response = client.text_detection(image=image)
-            if response.error.message: raise Exception(f"API Error: {response.error.message}")
-            if response.full_text_annotation: extracted_content = response.full_text_annotation.text
+            response = client.document_text_detection(image=image)
+            
+            if response.error.message:
+                raise Exception(f"API Error: {response.error.message}")
+            
+            if response.full_text_annotation:
+                extracted_content = response.full_text_annotation.text
         else:
             return {"error": f"Tipo de archivo no soportado para Google Vision: {mime_type}"}
+        
         token_count = count_tokens(extracted_content)
-        print(f"Job [{job_id}]: Extracción con Google Vision finalizada. Páginas: {page_count}, Tokens: {token_count}")
-        return {"raw_text": extracted_content, "page_count": page_count, "token_count": token_count, "error": None}
+        print(f"Job [{job_id}]: Extracción con Google Vision finalizada. Páginas: {page_count}")
+        
+        return {
+            "raw_text": extracted_content, 
+            "page_count": page_count, 
+            "token_count": token_count, 
+            "error": None,
+            "extraction_method": "google_vision",
+            "extraction_pages": page_count
+        }
     except Exception as e:
-        error_message = f"Error inesperado en Google Vision: {e}"
+        error_message = f"Error crítico en Google Vision: {e}"
         print(f"Job [{job_id}]: {error_message}")
-        return {"error": error_message}
+        return {"error": error_message, "extraction_pages": page_count or 0}
 
 # Opción OCR 2: LlamaParse
 async def extract_with_llama_parse_node(state: DocumentState) -> DocumentState:
     """
-    Realiza OCR y parsing usando el método verificado de parser.load_data().
-    Esta función está adaptada para funcionar de forma asíncrona dentro del grafo.
+    Realiza OCR y parsing usando el método asíncrono nativo aload_data().
     """
-    print("--- Worker: Extrayendo con LlamaParse (usando lógica verificada) ---")
+    print("--- Worker: Extrayendo con LlamaParse (Modo Asíncrono Nativo) ---")
     file_path = state["file_path"]
     job_id = state.get("job_id", "N/A")
 
     try:
-        # 1. Configurar el parser como en tu script funcional.
+        # 1. Configurar el parser
         parser = LlamaParse(
             api_key=settings.LLAMA_CLOUD_API_KEY,
-            result_type="markdown",  # Mantenemos markdown por su riqueza estructural
+            result_type="markdown",
             verbose=True
         )
 
-        # 2. La llamada a parser.load_data() es síncrona (bloqueante).
-        # Para evitar que congele toda nuestra aplicación asíncrona, debemos
-        # ejecutarla en un "executor", que es la forma correcta de manejar esto.
-        loop = asyncio.get_event_loop()
+        # 2. Llamada asíncrona nativa (más eficiente que executors)
+        print(f"Job [{job_id}]: Llamando a parser.aload_data() para: {file_path}")
+        parsed_docs = await parser.aload_data([file_path])
 
-        def parse_document_sync():
-            # Esta es la línea clave de TU código funcional.
-            print(f"Job [{job_id}]: Llamando a parser.load_data() para el archivo: {file_path}")
-            documents = parser.load_data([file_path])
-            return documents
-
-        # Ejecutamos la función síncrona en un hilo separado y esperamos el resultado.
-        parsed_docs = await loop.run_in_executor(None, parse_document_sync)
-
-        # 3. Procesar el resultado para que encaje en el estado del grafo.
+        # 3. Procesar el resultado
         if not parsed_docs:
             return {"error": "LlamaParse no devolvió ningún documento."}
 
-        # Unimos el contenido de todos los documentos parseados.
+        # Unimos el contenido
         extracted_content = "\n\n".join([doc.get_content() for doc in parsed_docs])
         
-        # Obtenemos las métricas como antes.
+        # Métricas
         page_count = parsed_docs[0].metadata.get('total_pages', 1) if parsed_docs[0].metadata else state.get("page_count_for_decision", 1)
         token_count = count_tokens(extracted_content)
 
-        print(f"Job [{job_id}]: Extracción con LlamaParse finalizada. Páginas: {page_count}, Tokens: {token_count}")
+        print(f"Job [{job_id}]: Extracción finalizada. Páginas: {page_count}, Tokens: {token_count}")
 
-        # 4. Devolver el diccionario para actualizar el estado del grafo.
         return {
             "raw_text": extracted_content,
             "page_count": page_count,
             "token_count": token_count,
-            "error": None
+            "error": None,
+            "extraction_method": "llama_parse",
+            "extraction_pages": page_count
         }
 
     except Exception as e:
-        error_message = f"Error inesperado durante la extracción con LlamaParse: {e}"
+        error_message = f"Error en LlamaParse asíncrono: {e}"
         print(f"Job [{job_id}]: {error_message}")
-        import traceback
-        traceback.print_exc() # Imprime el traceback completo para más detalles
-        return {"error": error_message}
+        print(f"Job [{job_id}]: Iniciando Fallback a Google Vision...")
+        # Fallback a Google Vision
+        return await extract_with_google_vision_node(state)
 
 # === NODOS DEL ORQUESTADOR ADAPTATIVO ===
 
@@ -222,7 +285,7 @@ async def adaptive_ocr_orchestrator_node(state: DocumentState) -> DocumentState:
     """Decide qué proveedor usar basándose en el contador de SQLite."""
     print("--- Orquestador Adaptativo: Tomando decisión de OCR ---")
     pages_to_process = state.get("page_count_for_decision", 1)
-    with sqlite3.connect(DB_FILE) as conn:
+    with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM settings WHERE key = 'llama_parse_reset_timestamp'")
         last_reset_time = datetime.fromisoformat(cursor.fetchone()[0])
@@ -242,16 +305,27 @@ async def adaptive_ocr_orchestrator_node(state: DocumentState) -> DocumentState:
     return {"ocr_provider": provider_choice}
 
 async def update_llama_parse_usage_node(state: DocumentState) -> DocumentState:
-    """Si se usó LlamaParse, actualiza el contador en SQLite de forma atómica."""
-    pages_processed = state.get("page_count", 0)
+    """Si se usó un servicio de OCR/Parser, actualiza el contador en SQLite de forma atómica."""
+    pages_processed = state.get("extraction_pages", 0)
+    method = state.get("extraction_method")
+    
     if pages_processed > 0:
-        with sqlite3.connect(DB_FILE) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE settings SET value = CAST(value AS INTEGER) + ? WHERE key = 'llama_parse_usage'", (pages_processed,))
+            if method == "llama_parse":
+                cursor.execute("UPDATE settings SET value = CAST(value AS INTEGER) + ? WHERE key = 'llama_parse_usage'", (pages_processed,))
+                key_name = "llama_parse_usage"
+            elif method == "google_vision":
+                cursor.execute("UPDATE settings SET value = CAST(value AS INTEGER) + ? WHERE key = 'google_vision_usage'", (pages_processed,))
+                key_name = "google_vision_usage"
+            else:
+                return {} # No actualizamos para native_pdf en DB por ahora
+                
             conn.commit()
-            cursor.execute("SELECT value FROM settings WHERE key = 'llama_parse_usage'")
+            cursor.execute(f"SELECT value FROM settings WHERE key = ?", (key_name,))
             new_total = cursor.fetchone()[0]
-            print(f"--- Orquestador (SQLite): Contador de LlamaParse actualizado a {new_total} ---")
+            print(f"--- Orquestador (SQLite): Contador de {method} actualizado a {new_total} ---")
+            
     return {}
 
 # === Nodo Final para Archivos no Soportados ===
@@ -272,155 +346,105 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     3. Identify the document date (the date of issuance as written in the text, e.g., 'Octubre 2025' or 'Octubre 1 de 2025'). 
     
     TEXT:
-    {state['raw_text'][:8000]}
+    {state['raw_text'][:CONTEXT_WINDOW_LIMIT]}
     """
     try:
-        data = await llm.with_structured_output(ExtractionSummary).ainvoke(prompt)
+        # Usamos include_raw=True para capturar la metadata de tokens
+        print(f"📡 Enviando prompt al LLM...")
+        runnable = llm.with_structured_output(ExtractionSummary, include_raw=True)
+        result = await _invoke_llm_with_retry(runnable, prompt)
+        print(f"✅ Respuesta recibida del LLM.")
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+        
         return {
             "summary": data.resumen, 
             "subject": data.asunto,
-            "document_date": data.fecha
+            "document_date": data.fecha,
+            "usage_metadata": usage # El reducer en el State se encarga de sumar
         }
     except Exception as e:
         print(f"!!! Error en summarize_and_get_subject_node: {e}")
         return {"errors": [f"Error en resumen: {e}"]}
 
-async def intent_detection_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Detección de intención ---")
-    ctx = get_toon_context(state)
-    prompt = f"""
-    Analyze the intent based on this context: {ctx}
-    Identify the PRIMARY action the sender wants the entity to perform:
-    - Solicitar Información: Pide datos, copias, aclaraciones.
-    - Presentar Queja/Reclamo: Insatisfacción o denuncia.
-    - Radicar para Pago: Facturas/cuentas de cobro.
-    - Entregar Documentación Requerida: Respuesta a requerimientos.
-    - Iniciar Trámite Nuevo: Permisos, licencias, nuevos procesos.
-    - Notificar Decisión/Resolución: Informar decisiones legales.
-    - Consulta General: Preguntas que no requieren acción compleja.
-    - Informativo/Cortesía: Sin requerimiento de acción.
+async def mega_analysis_node(state: DocumentState) -> DocumentState:
     """
-    try:
-        data = await llm.with_structured_output(IntentAnalysis).ainvoke(prompt)
-        return {"intent_analysis": data.dict()}
-    except Exception as e:
-        print(f"!!! Error en intent_detection_node: {e}")
-        return {"errors": [f"Error en intención: {e}"]}
-
-async def sentiment_and_urgency_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Sentimiento y Urgencia ---")
+    Consolida Master Enrichment, Entidades, Prioridad y Compliance en UNA sola llamada.
+    Reduce tokens de entrada en ~75% y evita errores de bloqueos 429 por Fan-Out concurrente.
+    """
+    print("--- Worker (Expert Mega): Análisis Global Unificado (Sustituyendo Fan-Out) ---")
     ctx = get_toon_context(state)
-    prompt = f"Perform psychological and linguistic analysis to detect sentiment tone (-1 to 1) and urgency level (Baja, Media, Alta, Crítica) for this context: {ctx}"
+    
+    prompt = f"""
+    Act as an expert archival analyst and Legal Advisor specialized in Colombian documentation (Ley 594/2000, Ley 1755/2015, Acuerdo 060 AGN).
+    Perform a multi-dimensional analysis of the document context provided.
+    
+    CONTEXT (TOON): {ctx}
+    TEXT SEGMENT: {state['raw_text'][:CONTEXT_WINDOW_LIMIT]}
+    
+    SCIENTIFIC/COGNITIVE TASKS:
+    
+    1. INTENT & SENTIMENT (Intencion y Sentimiento):
+       - Intent Options: Solicitar Información, Presentar Queja/Reclamo, Radicar para Pago, 
+         Entregar Documentación, Iniciar Trámite Nuevo, Notificar Decisión, Consulta General, Informativo/Cortesía.
+       - Tone (-1 to 1) and urgency (Baja, Media, Alta, Crítica).
+    
+    2. CLASSIFICATION & TAGS (Clasificacion y Etiquetas):
+       - Typology Options: Acto Administrativo, Contrato, Informe, Factura, Historia Laboral, Hoja de Vida, 
+         Solicitud (PQRS), Tutela, Comunicación Oficial, Certificado, Otro.
+       - Create 5-7 relevant Spanish tags.
+       
+    3. ENTITIES (Entidades):
+       - Identify People, Organizations, Dates, Amounts, and specific Codes (Radicados).
+       - Map relevant Facts and build a Timeline.
+       - Empty list [] if not found. Do NOT invent data.
+       
+    4. LEGAL PRIORITY (Prioridad Legal Ley 1755):
+       - Docs/Info: 10 days. Queries: 30 days. General/PQRS: 15 days.
+       - MUST cite the specific article/inciso.
+       
+    5. COMPLIANCE (Conformidad Archivística):
+       - Check Sender Identification, Recipient correctness, Purpose clarity, Signature presence.
+       - Summarize compliance and provide detailed recommendations.
+       
+    Your output MUST be highly professional and perfectly structured. Do not invent data. Return empty structures if necessary.
+    """
+    
     try:
-        data = await llm.with_structured_output(SentimentUrgency).ainvoke(prompt)
-        result = {
-            "sentimiento": {
-                "etiqueta": data.etiqueta,
-                "puntuacion": data.puntuacion,
-                "justificacion": data.justificacion
+        runnable = llm.with_structured_output(MegaEnrichmentOutput, include_raw=True)
+        result = await _invoke_llm_with_retry(runnable, prompt)
+        
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+        
+        return {
+            "intent_analysis": data.intencion.dict(),
+            "sentiment_analysis": {
+                "sentimiento": {
+                    "etiqueta": data.sentimiento_urgencia.etiqueta,
+                    "puntuacion": data.sentimiento_urgencia.puntuacion,
+                    "justificacion": data.sentimiento_urgencia.justificacion
+                },
+                "urgencia": {
+                    "nivel": data.sentimiento_urgencia.urgencia_nivel,
+                    "justificacion": data.sentimiento_urgencia.urgencia_justificacion
+                }
             },
-            "urgencia": {
-                "nivel": data.urgencia_nivel,
-                "justificacion": data.urgencia_justificacion
-            }
+            "classification": {
+                "tipologia_documental": data.clasificacion.tipologia_documental, 
+                "confianza": data.clasificacion.confianza
+            },
+            "tags": data.etiquetas,
+            "entities": data.entidades.dict(),
+            "priority_analysis": data.prioridad.dict(),
+            "compliance_analysis": {
+                "cumple_normativa": data.conformidad.cumple_normativa,
+                "resumen": data.conformidad.resumen_ejecutivo,
+                "detalles": data.conformidad.analisis_detallado
+            },
+            "usage_metadata": usage
         }
-        return {"sentiment_analysis": result}
     except Exception as e:
-        print(f"!!! Error en sentiment_and_urgency_node: {e}")
-        return {"errors": [f"Error en sentimiento: {e}"]}
-
-async def classify_document_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Clasificación TRD ---")
-    ctx = get_toon_context(state)
-    prompt = f"""
-    Identify the Doc Typology for a Colombian Public Entity (Law 594/2000).
-    Context: {ctx}
-    List: Acto Administrativo, Contrato, Informe, Factura/Cuenta de Cobro, Historia Laboral, Hoja de Vida, Solicitud (PQRS), Tutela, Comunicación Oficial, Póliza, Certificado, Otro.
-    """
-    try:
-        data = await llm.with_structured_output(ClassificationOutput).ainvoke(prompt)
-        # Sincronizamos con los nombres exactos: tipologia_documental y confianza
-        return {"classification": {"tipologia_documental": data.tipologia_documental, "confianza": data.confianza}}
-    except Exception as e:
-        print(f"!!! Error en classify_document_node: {e}")
-        return {"errors": [f"Error en clasificación: {e}"]}
-
-async def tag_document_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Generando etiquetas ---")
-    ctx = get_toon_context(state)
-    prompt = f"Generate 5-7 clear, relevant Spanish tags for this document context:\n{ctx}"
-    try:
-        data = await llm.with_structured_output(TagsOutput).ainvoke(prompt)
-        return {"tags": data.tags}
-    except Exception as e:
-        print(f"!!! Error en tag_document_node: {e}")
-        return {"errors": [f"Error en etiquetas: {e}"]}
-
-async def extract_entities_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Extracción de Entidades ---")
-    ctx = get_toon_context(state)
-    prompt = f"""
-    Extract key entities from the text. 
-    Instructions:
-    - Identify People and Organizations.
-    - Detect Dates, Amounts, and specific Codes (Radicados, Case IDs).
-    - Map relevant Facts and build a Timeline.
-    - IMPORTANT: If a category is not found, return an empty list []. Do NOT invent data.
-    
-    Context: {ctx}
-    Text Segment: {state['raw_text'][:8000]}
-    """
-    try:
-        data = await llm.with_structured_output(EntitiesOutput).ainvoke(prompt)
-        return {"entities": data.dict()}
-    except Exception as e:
-        print(f"!!! Error en extract_entities_node: {e}")
-        return {"errors": [f"Error en extracción de entidades: {e}"]}
-
-async def priority_assignment_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Prioridad Legal (Ley 1755) ---")
-    ctx = get_toon_context(state)
-    prompt = f"""
-    Act as a Legal Advisor specialized in Ley 1755/2015.
-    TERMS: 
-    1. Docs/Info: 10 days. 
-    2. Queries/Consultas: 30 days. 
-    3. General/PQRS: 15 days.
-    
-    CRITERIA:
-    - High: Docs/Info or Authority requests (10 days).
-    - Mid: General requests, complaints (15 days).
-    - Low: Consultas (30 days).
-    
-    Context: {ctx}
-    Assignment: Assign priority and MUST cite the specific article/inciso of Law 1755.
-    """
-    try:
-        data = await llm.with_structured_output(PriorityOutput).ainvoke(prompt)
-        return {"priority_analysis": data.dict()}
-    except Exception as e:
-        print(f"!!! Error en priority_assignment_node: {e}")
-        return {"errors": [f"Error en prioridad: {e}"]}
-
-async def compliance_analysis_node(state: DocumentState) -> DocumentState:
-    print("--- Worker (Expert): Conformidad Archivística (Acuerdo 060) ---")
-    ctx = get_toon_context(state)
-    prompt = f"""
-    Verify archival compliance based on Acuerdo 060 de 2001 (AGN).
-    CHECKPOINTS:
-    1. Sender Identification (Clear name/contact).
-    2. Recipient correctness.
-    3. Purpose/Subject clarity.
-    4. Signature presence.
-    5. Legibility.
-    6. Annexes mentioned.
-    
-    Context: {ctx}
-    Evaluate each point and provide solid archival recommendations for filing (radicación).
-    """
-    try:
-        data = await llm.with_structured_output(ComplianceOutput).ainvoke(prompt)
-        return {"compliance_analysis": data.dict()}
-    except Exception as e:
-        print(f"!!! Error en compliance_analysis_node: {e}")
-        return {"errors": [f"Error en conformidad: {e}"]}
+        print(f"!!! Error en mega_analysis_node: {e}")
+        return {"errors": [f"Error en MEGA análisis estructurado: {e}"]}

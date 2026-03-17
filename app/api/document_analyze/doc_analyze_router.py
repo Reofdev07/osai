@@ -1,6 +1,4 @@
-
 import uuid
-import asyncio
 
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -9,10 +7,7 @@ from pydantic import BaseModel, HttpUrl
 
 from ...utils.util import stream_download_file
 from ...agents.basic_response_agent import basic_response_agent
-from ...core.llm import create_llm
-
-# instance of LLM
-llm = create_llm()
+from ...agents.chat_expert_agent import expert_chat_stream_generator
 
 # Crear el router
 doc_analyze_router = APIRouter(
@@ -53,117 +48,6 @@ async def generate_summary_stream(payload: dict):
 
     
 
-
-async def stream_generator(full_payload: dict):
-    """
-    Este es un generador. LangChain nos da un iterador, y nosotros
-    lo recorremos y hacemos 'yield' de cada trozo de contenido.
-    FastAPI se encargará de enviar cada 'yield' al cliente.
-    """
-
-
-    # 1. Extraemos el contexto real que nos envía el frontend
-    context = full_payload.get('context', {})
-    
-    # Extraemos las secciones del contexto con seguridad
-    info = context.get('general_info', {})
-    analysis = context.get('ai_analysis', {})
-    parties = context.get('parties', {})
-    history = context.get('history', [])
-    task = context.get('current_task', {})
-
-    # Formateamos el historial para que sea legible
-    history_str = "\n".join([f"- {h['date']}: {h['description']} (Por: {h['user']})" for h in history]) if history else "No hay historial de eventos."
-
-    # Construimos un System Prompt de nivel experto
-    system_prompt = f"""
-        Eres un asistente experto en gestión de expedientes jurídicos y administrativos. 
-        Tu rol es ayudar al usuario a completar con éxito la tarea asignada dentro del caso #{info.get('radicado_number', 'N/A')}.
-
-        === PERFIL DEL USUARIO ===
-        - Usuario actual: {info.get('responsible_user', 'un funcionario')}
-        - Tarea pendiente: "{task.get('name', 'Revisar el caso')}"
-
-        === CONTEXTO COMPLETO DEL EXPEDIENTE ===
-
-        **1. Información General**
-        - Asunto: {info.get('subject', 'N/A')}
-        - Remitente (Ciudadano/Entidad): {info.get('sender', 'N/A')}
-        - Fecha límite de respuesta: {info.get('response_deadline_at', 'N/A')}
-        - Estado actual del caso: {info.get('current_status', 'N/A')}
-        - Dependencia responsable: {info.get('dependency', 'N/A')}
-
-        **2. Análisis Automático del Documento Principal**
-        - Resumen: {analysis.get('summary', 'N/A')}
-        - Intención detectada: {analysis.get('intent', {}).get('intencion', 'N/A')}
-        - Partes involucradas:
-            - Solicitante: {parties.get('claimant', 'N/A')}
-            - Demandado: {parties.get('defendant', 'N/A')}
-        - Hechos relevantes: {", ".join(analysis.get('entities', {}).get('hechos_relevantes', ['N/A']))}
-
-        **3. Historial reciente del caso (últimos eventos)**
-        {history_str}
-
-        === FIN DEL CONTEXTO ===
-
-        === INSTRUCCIONES DE RESPUESTA ===
-
-        1. **Estilo de comunicación**
-        - Usa un tono claro, profesional, pero cercano.
-        - Evita tecnicismos innecesarios, a menos que el usuario lo requiera.
-        - Responde en **español neutro**.
-        - Sé conciso, pero incluye todos los detalles relevantes.
-
-        2. **Reglas de comportamiento**
-        - Si el usuario saluda o conversa: responde de forma natural en texto plano.
-        - Si el usuario pide ayuda con la tarea: ofrece **pasos concretos**, **recomendaciones prácticas** y, si corresponde, ejemplos redactados.
-        - Si el usuario pide interpretación del documento: explica de manera resumida y accesible.
-        - Si el usuario pide una acción (ej. redactar respuesta, resumir, generar formato): entrega un borrador **listo para usar**, bien estructurado y formal.
-        - Si no tienes suficiente información, sé explícito y sugiere qué dato falta.
-
-        3. **Prioridad**
-        - Tu meta principal es ayudar al usuario a **completar la tarea pendiente** de la forma más rápida y precisa posible.
-        - No inventes información que no esté en el contexto, pero sí puedes inferir **con lógica y claridad**.
-
-        """
-    # 3. Preparamos el historial de mensajes para LangChain
-    #    LangChain funciona mejor con objetos de mensaje específicos.
-    from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-
-    messages_for_llm = [SystemMessage(content=system_prompt)]
-
-
-    # Añadimos el historial de chat, convirtiéndolo al formato de LangChain
-    for msg in full_payload.get('messages', []):
-        content = msg.get('content') or ""
-        if msg['role'] == 'user':
-            messages_for_llm.append(HumanMessage(content=content))
-        elif msg['role'] == 'assistant':
-            messages_for_llm.append(AIMessage(content=content))
-            
-    # 4. Llamamos al LLM con el contexto completo (System Prompt + Historial)
-    response_stream = llm.astream(messages_for_llm)
-
-    async for chunk in response_stream:
-        if chunk.content:
-            yield chunk.content
-
-
-
-    # user_message = full_payload['messages'][-1]['content']
-    
-    # # 1. Reemplazamos .invoke() por .stream()
-    # # Esto devuelve un iterador de AIMessageChunk, no una respuesta final.
-    # response_stream = llm.astream(user_message)
-    
-    # # 2. Iteramos sobre los chunks que LangChain nos va entregando
-    # async for chunk in response_stream:
-    #     # 'chunk' NO es un string. Es un objeto, usualmente AIMessageChunk.
-    #     # El contenido de texto está en el atributo .content.
-    #     print(f"Yielding chunk: {chunk.content}") # Para depurar en la consola de FastAPI
-    #     yield chunk.content
-
-
 @doc_analyze_router.post("/assistant/chat-stream")
 async def chat_stream(payload: dict):
     """
@@ -176,8 +60,6 @@ async def chat_stream(payload: dict):
     # En el futuro Job de Laravel, deberíamos añadir el 'document_subject', 'document_summary', etc. al payload.
     # Por ahora, lo simularemos.
     
-
-    
     # Unimos la información
     full_payload = {**payload}
-    return StreamingResponse(stream_generator(full_payload), media_type="text/plain")
+    return StreamingResponse(expert_chat_stream_generator(full_payload), media_type="text/plain")
