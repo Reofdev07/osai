@@ -82,3 +82,11 @@ class MegaEnrichmentOutput(BaseModel):
     entidades: EntitiesOutput
     prioridad: PriorityOutput
     conformidad: ComplianceOutput
+
+class PqrsdValidationOutput(BaseModel):
+    is_valid: bool = Field(description="Indica si la PQRSD es inteligible y tiene suficiente contexto mínimo (qué solicita y motivo).")
+    status: str = Field(description="Opciones estandarizadas: 'Cumple' o 'Incompleto_Falta_Contexto'")
+    pqrsd_type: str = Field(description="Opciones estandarizadas: 'Petición', 'Queja', 'Reclamo', 'Sugerencia', 'Denuncia'")
+    summary: str = Field(description="Resumen ejecutivo muy breve que sirva para que un humano lo lea rápido (max 3 líneas).")
+    suggested_department: str = Field(description="El nombre genérico de la dependencia colombiana que debería resolver esto (Ej: 'Secretaría de Infraestructura', 'Acueducto', 'Tránsito', 'Hacienda', etc.).")
+    missing_information: Optional[str] = Field(None, description="Si es 'Incompleto_Falta_Contexto', redacta aquí qué pieza de información le falta al ciudadano para que el trámite sea válido.")
