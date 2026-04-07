@@ -4,8 +4,10 @@ FROM python:3.11-slim as builder
 # Establecer el directorio de trabajo
 WORKDIR /app
 
-# Instalar dependencias del sistema operativo si fueran necesarias (ej. para compilar paquetes)
-# RUN apt-get update && apt-get install -y --no-install-recommends gcc build-essential
+# Instalar dependencias del sistema operativo
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Crear un entorno virtual
 RUN python -m venv /opt/venv
@@ -21,6 +23,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Stage 2: Runner - La imagen final y ligera
 FROM python:3.11-slim
+
+# Instalar libmagic1 en tiempo de ejecución
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Establecer el directorio de trabajo
 WORKDIR /app
