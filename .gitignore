@@ -5,6 +5,7 @@
 .env.development
 .osai-venv/
 osai_venv/
+venv/
 
 
 # credenciales

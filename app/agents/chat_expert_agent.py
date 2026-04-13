@@ -99,8 +99,8 @@ async def expert_chat_stream_generator(full_payload: dict):
         4. **Limitación**: Si la herramienta no devuelve información, indica que el dato no está disponible en este momento.
     """
 
-    # Preparamos mensajes iniciales
-    raw_messages = []
+    # Preparamos mensajes iniciales e insertamos el Prompt del Sistema al principio
+    raw_messages = [SystemMessage(content=system_prompt)]
     for msg in full_payload.get('messages', []):
         content = msg.get('content') or ""
         if msg['role'] == 'user':
@@ -112,36 +112,44 @@ async def expert_chat_stream_generator(full_payload: dict):
     messages_for_llm = trim_messages(
         raw_messages,
         strategy="last",
-        token_counter=len,
-        max_tokens=6,
-        start_on="human",
-        include_system=False, # El sistema se añade en el react_agent
+        token_counter=len, # Usamos len como contador aproximado de caracteres
+        max_tokens=10000, # Aumentamos drásticamente para no cortar el prompt (aprox 10k caracteres)
+        include_system=True, 
     )
 
-    # Creamos el agente de razonamiento
-    agent = create_react_agent(llm, tools=tools, state_modifier=system_prompt)
+    # Creamos el agente de razonamiento (Versión compatible)
+    agent = create_react_agent(llm, tools=tools)
 
     # Ejecutamos el agente en modo stream
-    async for chunk in agent.astream({"messages": messages_for_llm}, stream_mode="messages"):
-        msg, metadata = chunk
+    # En versiones modernas, astream con stream_mode="messages" devuelve tuplas (mensaje, metadata)
+    async for msg, metadata in agent.astream({"messages": messages_for_llm}, stream_mode="messages"):
         
-        # Solo emitimos el contenido si es un mensaje de la IA (no una llamada a herramienta interna)
-        if isinstance(msg, AIMessage) and msg.content:
-            # Si el mensaje tiene tool_calls, no lo emitimos al usuario (es pensamiento interno)
-            if not msg.tool_calls:
-                yield json.dumps({"type": "content", "content": msg.content}, ensure_ascii=False) + "\n"
+        # Solo emitimos el contenido si es un mensaje de la IA y tiene contenido textual
+        if isinstance(msg, AIMessage) or hasattr(msg, 'content'):
+            content = msg.content
+            
+            # NORMALIZACIÓN: Si el contenido es una lista (fragmentos), extraemos el texto
+            if isinstance(content, list):
+                text_content = ""
+                for part in content:
+                    if isinstance(part, dict) and 'text' in part:
+                        text_content += part['text']
+                    elif isinstance(part, str):
+                        text_content += part
+                content = text_content
+
+            if content and isinstance(content, str) and not getattr(msg, 'tool_calls', None):
+                # Importante: Enviamos cada fragmento como una línea JSON válida
+                yield json.dumps({"type": "content", "content": content}, ensure_ascii=False) + "\n"
         
-        # Capturamos el uso de tokens al final del proceso
-        if metadata.get("langgraph_node") == "agent":
-            if hasattr(msg, 'usage_metadata') and msg.usage_metadata:
-                usage = msg.usage_metadata
-                usage_dict = {
-                    "input_tokens": usage.get("input_tokens", 0),
-                    "output_tokens": usage.get("output_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0)
-                }
-                # Solo emitimos el último usage que encontremos
-                self_usage = usage_dict
+        # Capturamos el uso de tokens si está disponible
+        if hasattr(msg, 'usage_metadata') and msg.usage_metadata:
+            usage = msg.usage_metadata
+            self_usage = {
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0)
+            }
 
     # Envío final de usage (aproximado basado en el último nodo del agente)
     # Nota: LangGraph a veces emite varios usage, aquí capturamos el último disponible

@@ -72,6 +72,7 @@ Para instalar el proyecto, sigue los siguientes pasos:
 3. Activar el entorno virtual:
    ```bash
    .\osai_venv\Scripts\Activate.ps1
+   source venv/bin/activate
    ```
 4. Instalar dependencias:
    ```bash
