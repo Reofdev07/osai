@@ -11,7 +11,7 @@ def route_based_on_file_type(state: DocumentState) -> str:
     print(f"--- Edge (Routing): Decidiendo ruta basada en file_type = '{file_type}' ---")
     
     # Lista de rutas válidas que el grafo conoce.
-    valid_routes = ["pdf_text", "pdf_scanned", "image", "unsupported"]
+    valid_routes = ["pdf_text", "pdf_scanned", "image", "office_document", "unsupported"]
     
     if file_type in valid_routes:
         # Devuelve el valor directamente. El diccionario del grafo hará el mapeo al nodo correcto.

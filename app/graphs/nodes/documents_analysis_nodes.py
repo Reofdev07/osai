@@ -85,6 +85,9 @@ async def analyze_and_route_node(state: DocumentState) -> DocumentState:
     elif "image" in mime_type:
         return {"file_type": "image", "page_count": 1}
     else:
+        file_ext = os.path.splitext(file_path)[1].lower()
+        if file_ext in ['.docx', '.doc', '.xlsx', '.xls', '.csv', '.txt'] or any(t in mime_type for t in ["officedocument", "msword", "ms-excel", "csv", "text/plain"]):
+            return {"file_type": "office_document", "page_count": 1}
         return {"file_type": "unsupported"}
 
 # === NODOS DE EXTRACCIÓN DE TEXTO ===
@@ -119,8 +122,13 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
     file_path = state["file_path"]
     job_id = state.get("job_id", "N/A")
     
-    # El cliente se instancia una vez por llamada al nodo.
-    # Google Cloud Vision detecta automáticamente las credenciales de os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+    # Verificar credenciales antes de instanciar el cliente
+    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not creds_path or not os.path.exists(creds_path):
+        error_msg = f"Credenciales de GCP no encontradas en {creds_path}. Configure GOOGLE_APPLICATION_CREDENTIALS correctamente."
+        print(f"Job [{job_id}]: {error_msg}")
+        return {"error": error_msg, "extraction_pages": 0}
+
     client = vision.ImageAnnotatorClient()
     
     try:
@@ -185,6 +193,132 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
         error_message = f"Error crítico en Google Vision: {e}"
         print(f"Job [{job_id}]: {error_message}")
         return {"error": error_message, "extraction_pages": page_count or 0}
+
+# === NUEVO: Extracción nativa de documentos Office (DOCX, XLSX, CSV, TXT) ===
+async def extract_office_document_node(state: DocumentState) -> DocumentState:
+    """
+    Extrae texto plano de documentos de Office usando librerías nativas de Python.
+    Soporta: .docx, .doc, .xlsx, .xls, .csv, .txt
+    Similar a como ChatGPT lee estos archivos: directamente, sin OCR ni servicios externos.
+    """
+    print("--- Worker: Extrayendo texto de documento Office (nativo Python) ---")
+    file_path = state["file_path"]
+    job_id = state.get("job_id", "N/A")
+    
+    try:
+        import pandas as pd
+        from docx import Document as DocxDocument
+        
+        # Detectar el tipo real del archivo por extensión Y por mime
+        file_ext = os.path.splitext(file_path)[1].lower()
+        mime_type = puremagic.from_file(file_path, mime=True)
+        
+        extracted_content = ""
+        page_count = 1
+        
+        # --- DOCX ---
+        if file_ext in ['.docx'] or 'officedocument.wordprocessingml' in mime_type:
+            print(f"Job [{job_id}]: Leyendo archivo DOCX con python-docx...")
+            doc = DocxDocument(file_path)
+            
+            paragraphs_text = []
+            for para in doc.paragraphs:
+                text = para.text.strip()
+                if text:
+                    paragraphs_text.append(text)
+            
+            # También extraer tablas del documento
+            for i, table in enumerate(doc.tables):
+                table_rows = []
+                for row in table.rows:
+                    row_data = [cell.text.strip() for cell in row.cells]
+                    table_rows.append(" | ".join(row_data))
+                if table_rows:
+                    paragraphs_text.append(f"\n--- Tabla {i+1} ---")
+                    paragraphs_text.extend(table_rows)
+            
+            extracted_content = "\n".join(paragraphs_text)
+            # Estimar páginas (~3000 chars por página)
+            page_count = max(1, len(extracted_content) // 3000)
+        
+        # --- XLSX / XLS ---
+        elif file_ext in ['.xlsx', '.xls'] or any(t in mime_type for t in ['spreadsheetml', 'ms-excel']):
+            print(f"Job [{job_id}]: Leyendo archivo Excel con pandas + openpyxl...")
+            
+            all_sheets_text = []
+            xls = pd.ExcelFile(file_path)
+            
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name)
+                df = _clean_dataframe(df)
+                if not df.empty:
+                    all_sheets_text.append(f"--- Hoja: {sheet_name} ({len(df)} filas, {len(df.columns)} columnas) ---")
+                    all_sheets_text.append(df.to_markdown(index=False))
+            
+            extracted_content = "\n\n".join(all_sheets_text)
+            page_count = len(xls.sheet_names)
+        
+        # --- CSV ---
+        elif file_ext in ['.csv'] or 'csv' in mime_type:
+            print(f"Job [{job_id}]: Leyendo archivo CSV con pandas...")
+            df = pd.read_csv(file_path)
+            df = _clean_dataframe(df)
+            extracted_content = df.to_markdown(index=False)
+        
+        # --- TXT / Texto plano ---
+        elif file_ext in ['.txt'] or 'plain' in mime_type:
+            print(f"Job [{job_id}]: Leyendo archivo TXT como texto plano...")
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                extracted_content = f.read()
+        
+        # --- DOC (formato antiguo) ---
+        elif file_ext in ['.doc'] or 'msword' in mime_type:
+            print(f"Job [{job_id}]: Leyendo archivo DOC (formato legacy)...")
+            # DOC antiguo es binario, intentamos extraer con antiword o lectura cruda
+            try:
+                import subprocess
+                result = subprocess.run(['antiword', file_path], capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    extracted_content = result.stdout
+                else:
+                    # Fallback: leer bytes y extraer lo que parezca texto
+                    with open(file_path, "rb") as f:
+                        raw = f.read()
+                    extracted_content = raw.decode("utf-8", errors="ignore")
+                    # Limpiar caracteres de control
+                    extracted_content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', extracted_content)
+            except Exception as doc_err:
+                print(f"Job [{job_id}]: Error leyendo DOC legacy: {doc_err}")
+                with open(file_path, "rb") as f:
+                    raw = f.read()
+                extracted_content = raw.decode("utf-8", errors="ignore")
+                extracted_content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', extracted_content)
+        
+        else:
+            return {"error": f"Formato de Office no reconocido: ext={file_ext}, mime={mime_type}"}
+        
+        # Validar que obtuvimos contenido
+        if not extracted_content or not extracted_content.strip():
+            return {"error": f"No se pudo extraer texto del archivo Office ({file_ext}). El archivo podría estar vacío o protegido."}
+        
+        token_count = count_tokens(extracted_content)
+        print(f"Job [{job_id}]: Extracción Office finalizada. Caracteres: {len(extracted_content)}, Tokens: {token_count}")
+        
+        return {
+            "raw_text": extracted_content,
+            "page_count": page_count,
+            "token_count": token_count,
+            "error": None,
+            "extraction_method": "native_office",
+            "extraction_pages": page_count
+        }
+    
+    except Exception as e:
+        error_message = f"Error extrayendo documento Office: {e}"
+        print(f"Job [{job_id}]: {error_message}")
+        import traceback
+        traceback.print_exc()
+        return {"error": error_message, "extraction_pages": 0}
 
 # Opción OCR 2: LlamaParse
 async def extract_with_llama_parse_node(state: DocumentState) -> DocumentState:
@@ -374,6 +508,12 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     Reduce tokens de entrada en ~75% y evita errores de bloqueos 429 por Fan-Out concurrente.
     """
     print("--- Worker (Expert Mega): Análisis Global Unificado (Sustituyendo Fan-Out) ---")
+    
+    # Seguridad: Si no hay texto, no tiene sentido llamar al LLM
+    raw_text = state.get("raw_text", "").strip()
+    if not raw_text:
+        return {"errors": ["No hay texto para realizar el mega-análisis."]}
+        
     ctx = get_toon_context(state)
     
     prompt = f"""
@@ -381,7 +521,7 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     Perform a multi-dimensional analysis of the document context provided.
     
     CONTEXT (TOON): {ctx}
-    TEXT SEGMENT: {state['raw_text'][:CONTEXT_WINDOW_LIMIT]}
+    TEXT SEGMENT: {raw_text[:CONTEXT_WINDOW_LIMIT]}
     
     SCIENTIFIC/COGNITIVE TASKS:
     

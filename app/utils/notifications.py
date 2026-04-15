@@ -10,9 +10,18 @@ from typing import Any, Dict, Optional
 from app.core.config import settings
 
 def save_pending_webhook(payload: dict):
-    """Guarda en disco un webhook fallido para su posterior reenvío."""
+    """Guarda en disco un webhook fallido para su posterior reenvío, optimizando el espacio."""
     try:
         os.makedirs("data/pending_webhooks", exist_ok=True)
+        
+        # --- Optimización: No guardar datos masivos de texto crudo en el respaldo ---
+        # Si el payload es muy grande, es por el 'raw_text' de los documentos.
+        if "data" in payload and isinstance(payload["data"], dict):
+            raw_text = payload["data"].get("raw_text", "")
+            if raw_text and len(raw_text) > 50000: # Si tiene más de 50KB de texto
+                payload["data"]["raw_text"] = raw_text[:50000] + "... [TRUNCADO POR ESPACIO]"
+                print(f"⚠️ Payload de respaldo truncado para ahorrar espacio ({len(raw_text)} chars -> 50k)")
+
         filename = f"data/pending_webhooks/{payload.get('job_id', 'unknown')}_{int(time.time())}.json"
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -72,5 +81,11 @@ async def notify_steps_to_laravel(
                     await asyncio.sleep(wait_time)
                 else:
                     print(f"❌ Fallaron los {MAX_RETRIES} intentos de webhook al job {job_id}.")
-                    save_pending_webhook(payload)
+                    
+                    # --- FILTRO: No guardar basura de Excel en disco ---
+                    if node_name == "extract_office":
+                        print(f"🚫 Nodo '{node_name}' falló pero NO se guardará respaldo (basura Excel detectada).")
+                    else:
+                        save_pending_webhook(payload)
+                        
                     return False
