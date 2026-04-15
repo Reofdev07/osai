@@ -19,7 +19,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from app.schemas.graph_state import DocumentState
 from app.utils.token_counter import count_tokens, update_usage_metadata
 from app.utils.toon_helper import get_toon_context
-from app.core.llm import create_llm
+from app.core.llm import create_llm, create_llm_emergency
 from app.core.config import settings
 from app.core.database import DB_FILE, get_db_connection  # Importa la ruta y el getter
 from app.schemas.agent_schemas import (
@@ -32,16 +32,23 @@ from app.schemas.agent_schemas import (
 LLAMA_PARSE_FREE_LIMIT_WEEKLY = 7000
 CONTEXT_WINDOW_LIMIT = 300000 # ~75k tokens, suficiente para documentos largos
 llm = create_llm()
+llm_emergency = create_llm_emergency()
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.GOOGLE_APPLICATION_CREDENTIALS
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
+    stop=stop_after_attempt(5), # Aumentado a 5 intentos
+    wait=wait_exponential(multiplier=2, min=4, max=30), # Espera exponencial: 4s, 8s, 16s... hasta 30s
     reraise=True
 )
 async def _invoke_llm_with_retry(runnable, prompt):
-    """Wrapper con reintentos para llamadas al LLM."""
-    return await runnable.ainvoke(prompt)
+    """Wrapper con reintentos robustos para llamadas al LLM."""
+    try:
+        return await runnable.ainvoke(prompt)
+    except Exception as e:
+        err_str = str(e).upper()
+        if "503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str or "QUOTA" in err_str:
+            print(f"⚠️ API Saturated/Quota (503/429), retrying... {e}")
+        raise e
 
 # === NODO 1: RUTA DE ENTRADA ===
 async def analyze_and_route_node(state: DocumentState) -> DocumentState:
@@ -193,6 +200,18 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
         error_message = f"Error crítico en Google Vision: {e}"
         print(f"Job [{job_id}]: {error_message}")
         return {"error": error_message, "extraction_pages": page_count or 0}
+
+def _clean_dataframe(df):
+    """Limpia un DataFrame eliminando columnas y filas vacías o con demasiados NaNs."""
+    # Eliminar columnas que sean completamente NaN
+    df = df.dropna(axis=1, how='all')
+    # Eliminar filas que sean completamente NaN 
+    df = df.dropna(axis=0, how='all')
+    # Si queda muy poco, retornar DF vacio
+    if df.empty: return df
+    # Limpiar nombres de columnas y strings
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
 
 # === NUEVO: Extracción nativa de documentos Office (DOCX, XLSX, CSV, TXT) ===
 async def extract_office_document_node(state: DocumentState) -> DocumentState:
@@ -483,24 +502,30 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     {state['raw_text'][:CONTEXT_WINDOW_LIMIT]}
     """
     try:
-        # Usamos include_raw=True para capturar la metadata de tokens
-        print(f"📡 Enviando prompt al LLM...")
+        # Intento 1: Modelo Principal (Configurado en .env)
+        print(f"📡 Enviando prompt al LLM Principal (Summarize)...")
         runnable = llm.with_structured_output(ExtractionSummary, include_raw=True)
         result = await _invoke_llm_with_retry(runnable, prompt)
-        print(f"✅ Respuesta recibida del LLM.")
-        
-        data = result['parsed']
-        usage = result['raw'].usage_metadata
-        
-        return {
-            "summary": data.resumen, 
-            "subject": data.asunto,
-            "document_date": data.fecha,
-            "usage_metadata": usage # El reducer en el State se encarga de sumar
-        }
     except Exception as e:
-        print(f"!!! Error en summarize_and_get_subject_node: {e}")
-        return {"errors": [f"Error en resumen: {e}"]}
+        print(f"⚠️ Error en modelo principal (Summarize): {e}. Probando EMERGENCIA (Gemini)...")
+        try:
+            # Intento 2: Modelo de Emergencia (Gemini 1.5 Flash)
+            runnable_emergency = llm_emergency.with_structured_output(ExtractionSummary, include_raw=True)
+            result = await _invoke_llm_with_retry(runnable_emergency, prompt)
+            print(f"✅ Emergencia exitosa usando Gemini en Summarize.")
+        except Exception as e2:
+            print(f"!!! Error persistente en Summarize: {e2}")
+            return {"errors": [f"Error en resumen: {e2}"]}
+        
+    data = result['parsed']
+    usage = result['raw'].usage_metadata
+    
+    return {
+        "summary": data.resumen, 
+        "subject": data.asunto,
+        "document_date": data.fecha,
+        "usage_metadata": usage
+    }
 
 async def mega_analysis_node(state: DocumentState) -> DocumentState:
     """
@@ -552,39 +577,51 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     """
     
     try:
+        # Intento 1: Modelo Principal (Configurado en .env)
+        print(f"📡 Enviando prompt al LLM Principal (Mega Analysis)...")
         runnable = llm.with_structured_output(MegaEnrichmentOutput, include_raw=True)
         result = await _invoke_llm_with_retry(runnable, prompt)
-        
-        data = result['parsed']
-        usage = result['raw'].usage_metadata
-        
-        return {
-            "intent_analysis": data.intencion.dict(),
-            "sentiment_analysis": {
-                "sentimiento": {
-                    "etiqueta": data.sentimiento_urgencia.etiqueta,
-                    "puntuacion": data.sentimiento_urgencia.puntuacion,
-                    "justificacion": data.sentimiento_urgencia.justificacion
-                },
-                "urgencia": {
-                    "nivel": data.sentimiento_urgencia.urgencia_nivel,
-                    "justificacion": data.sentimiento_urgencia.urgencia_justificacion
-                }
-            },
-            "classification": {
-                "tipologia_documental": data.clasificacion.tipologia_documental, 
-                "confianza": data.clasificacion.confianza
-            },
-            "tags": data.etiquetas,
-            "entities": data.entidades.dict(),
-            "priority_analysis": data.prioridad.dict(),
-            "compliance_analysis": {
-                "cumple_normativa": data.conformidad.cumple_normativa,
-                "resumen": data.conformidad.resumen_ejecutivo,
-                "detalles": data.conformidad.analisis_detallado
-            },
-            "usage_metadata": usage
-        }
     except Exception as e:
-        print(f"!!! Error en mega_analysis_node: {e}")
-        return {"errors": [f"Error en MEGA análisis estructurado: {e}"]}
+        print(f"⚠️ Error en modelo principal (Mega Analysis): {e}. Probando EMERGENCIA (Gemini)...")
+        try:
+            # Intento 2: Modelo de Emergencia (Gemini 1.5 Flash)
+            runnable_emergency = llm_emergency.with_structured_output(MegaEnrichmentOutput, include_raw=True)
+            result = await _invoke_llm_with_retry(runnable_emergency, prompt)
+            print(f"✅ Emergencia exitosa usando Gemini en Mega Analysis.")
+        except Exception as e2:
+            print(f"!!! Error persistente en MEGA análisis: {e2}")
+            return {"errors": [f"Error persistente en MEGA análisis: {e2}"]}
+        
+    data = result['parsed']
+    if not data:
+        return {"errors": ["No se pudo estructurar el mega-análisis."]}
+        
+    usage = result['raw'].usage_metadata
+    
+    return {
+        "intent_analysis": data.intencion.dict(),
+        "sentiment_analysis": {
+            "sentimiento": {
+                "etiqueta": data.sentimiento_urgencia.etiqueta,
+                "puntuacion": data.sentimiento_urgencia.puntuacion,
+                "justificacion": data.sentimiento_urgencia.justificacion
+            },
+            "urgencia": {
+                "nivel": data.sentimiento_urgencia.urgencia_nivel,
+                "justificacion": data.sentimiento_urgencia.urgencia_justificacion
+            }
+        },
+        "classification": {
+            "tipologia_documental": data.clasificacion.tipologia_documental, 
+            "confianza": data.clasificacion.confianza
+        },
+        "tags": data.etiquetas,
+        "entities": data.entidades.dict(),
+        "priority_analysis": data.prioridad.dict(),
+        "compliance_analysis": {
+            "cumple_normativa": data.conformidad.cumple_normativa,
+            "resumen": data.conformidad.resumen_ejecutivo,
+            "detalles": data.conformidad.analisis_detallado
+        },
+        "usage_metadata": usage
+    }

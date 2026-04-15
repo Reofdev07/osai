@@ -32,31 +32,50 @@ class Settings(BaseSettings):
         extra = 'ignore' # Buena práctica para ignorar campos extra en los .env
 
 class DevelopmentSettings(Settings):
-    # Selector: GEMINI | DEEPSEEK | COHERE
+    # Selector Principal: GEMINI | DEEPSEEK | COHERE (leído del .env)
     AI_SELECTOR: str = os.getenv("AI_SELECTOR", "GEMINI")
+    
+    # Selector de Emergencia: se usa si el principal falla (leído del .env)
+    AI_SELECTOR_EMERGENCY: str = os.getenv("AI_SELECTOR_EMERGENCY", "GEMINI")
 
     # Claves originales de tu .env
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY")
     CO_API_KEY: str = os.getenv("CO_API_KEY")
 
+    # --- Mappings reutilizables ---
+    _MODEL_MAP = {
+        "GEMINI": "gemini-2.5-flash",
+        "DEEPSEEK": "deepseek-chat",
+        "COHERE": "command-r-plus"
+    }
+    _PROVIDER_MAP = {
+        "GEMINI": "google_genai",
+        "DEEPSEEK": "deepseek",
+        "COHERE": "cohere"
+    }
+
+    # --- Modelo Principal ---
     @property
     def AI_MODEL(self) -> str:
-        mapping = {
-            "GEMINI": os.getenv("MODEL_NAME_DEV") or "gemini-2.5-flash",
-            "DEEPSEEK": "deepseek-chat",
-            "COHERE": "command-r-plus"
-        }
-        return mapping.get(self.AI_SELECTOR, mapping["GEMINI"])
+        custom = os.getenv("MODEL_NAME_DEV")
+        if custom:
+            return custom
+        return self._MODEL_MAP.get(self.AI_SELECTOR, self._MODEL_MAP["GEMINI"])
 
     @property
     def AI_PROVIDER(self) -> str:
-        mapping = {
-            "GEMINI": "google_genai",
-            "DEEPSEEK": "deepseek",
-            "COHERE": "cohere"
-        }
-        return mapping.get(self.AI_SELECTOR, mapping["GEMINI"])
+        return self._PROVIDER_MAP.get(self.AI_SELECTOR, self._PROVIDER_MAP["GEMINI"])
+
+    # --- Modelo de Emergencia ---
+    @property
+    def AI_MODEL_EMERGENCY(self) -> str:
+        return self._MODEL_MAP.get(self.AI_SELECTOR_EMERGENCY, self._MODEL_MAP["GEMINI"])
+
+    @property
+    def AI_PROVIDER_EMERGENCY(self) -> str:
+        return self._PROVIDER_MAP.get(self.AI_SELECTOR_EMERGENCY, self._PROVIDER_MAP["GEMINI"])
+
     
     # Bucket
     BUCKET_NAME: str
