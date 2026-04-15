@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../SGD-Front"
+		},
+		{
+			"path": "../SDG-Back-api"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}

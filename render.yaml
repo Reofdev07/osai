@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: osai-app
+    env: docker
+    plan: starter
+    branch: DockerAndDespleig
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /info
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - fromGroup: osai-secrets

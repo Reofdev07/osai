@@ -3,8 +3,17 @@
 *.env
 .env.production
 .env.development
+.osai-venv/
 osai_venv/
+venv/
 
+
+# credenciales
+credentials/
+
+# langgraph api
+.langgraph_api/
+.pckl
 
 # Archivos de compilación de Python
 __pycache__/

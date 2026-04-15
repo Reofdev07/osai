@@ -1,0 +1,20 @@
+{
+    "venvPath": "c:\\Users\\reof1\\Desktop\\OSAI",
+    "venv": "osai_venv",
+    "include": [
+        "app"
+    ],
+    "executionEnvironments": [
+        {
+            "root": "app",
+            "extraPaths": [
+                ".."
+            ]
+        },
+        {
+            "root": "."
+        }
+    ],
+    "reportMissingImports": true,
+    "typeCheckingMode": "basic"
+}

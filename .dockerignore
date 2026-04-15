@@ -1,0 +1,28 @@
+# Entorno virtual local
+osai_venv/
+
+# Archivos de Git
+.git/
+.gitignore
+
+# Cache de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Archivos de entorno y secretos
+.env
+.env.*
+
+# Base de datos local y datos
+data/
+*.db
+*.sqlite3
+
+# Documentación y otros archivos del proyecto
+README.mkd
+langgraph.json
+
+# Directorios de herramientas de desarrollo (si los hubiera)
+.vscode/
+.idea/

@@ -1,64 +1,118 @@
+
 import os
 from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
+from functools import lru_cache
 
-from app.core.logger_config import logger 
-
-load_dotenv()
+# Obtener el entorno PRIMERO. El valor por defecto es 'development'.
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+print(ENVIRONMENT)
 
 class Settings(BaseSettings):
-    # Configuración común
+    """Configuración base"""
+    
+    # App
     APP_NAME: str = "Osai"
-    DEBUG: bool = False
-    DATABASE_URL: str = ""
-    API_KEY_TOKEN: str
-    FASTAPI_ENV: str
-
-    # Database variables
-    DB_HOST: str = "localhost"
-    DB_PORT: int = 3306
-    DB_DATABASE: str
-    DB_USERNAME: str = "root"
-    DB_PASSWORD: str = ""
-
-    # AWS S3 Credentials
-    # AWS_ACCESS_KEY_ID: str
-    # AWS_SECRET_ACCESS_KEY: str
-    # AWS_DEFAULT_REGION: str
-    # AWS_BUCKET: str
-    # AWS_USE_PATH_STYLE_ENDPOINT: bool = False
+    ENVIRONMENT: str = ENVIRONMENT # El valor se toma de la variable de entorno
     
-    # OPENAI API
-    # OPENAI_API_KEY: str
+    WEBHOOK_URL: str = os.getenv("WEBHOOK_URL")
+    WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET")
     
-    # SECRET_KEY: str
-    # REFRESH_SECRET_KEY: str
-    # ALGORITHM: str
-    # ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    # REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT")
+    LANGSMITH_TRACING: bool = True
+    LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT")
+    LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY")
     
+    GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    LLAMA_CLOUD_API_KEY: str = os.getenv("LLAMA_CLOUD_API_KEY")
+        
     class Config:
-        env_file = ".env"
-        extra = "ignore"
+        # Carga primero el .env y luego el específico del entorno.
+        # Los valores de .env.development sobreescribirán los de .env si coinciden.
+        env_file = (".env", f".env.{ENVIRONMENT}")
+        extra = 'ignore' # Buena práctica para ignorar campos extra en los .env
 
 class DevelopmentSettings(Settings):
-    DEBUG: bool = True
-    DATABASE_URL: str = (
-        f"mysql+pymysql://{os.getenv('DB_USERNAME')}:{os.getenv('DB_PASSWORD')}"
-        f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_DATABASE')}"
-    )
-class ProductionSettings(Settings):
-    DEBUG: bool = False
-    DATABASE_URL: str = (
-        f"mysql+pymysql://{os.getenv('DB_USERNAME')}:{os.getenv('DB_PASSWORD')}"
-        f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_DATABASE')}"
-    )
+    # Selector Principal: GEMINI | DEEPSEEK | COHERE (leído del .env)
+    AI_SELECTOR: str = os.getenv("AI_SELECTOR", "GEMINI")
+    
+    # Selector de Emergencia: se usa si el principal falla (leído del .env)
+    AI_SELECTOR_EMERGENCY: str = os.getenv("AI_SELECTOR_EMERGENCY", "GEMINI")
 
-def get_settings() -> Settings:
-    env = os.getenv("FASTAPI_ENV", "development")
-    logger.info(f"Running environment: {env}")
-    if env == "production":
+    # Claves originales de tu .env
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY")
+    CO_API_KEY: str = os.getenv("CO_API_KEY")
+
+    # --- Mappings reutilizables ---
+    _MODEL_MAP = {
+        "GEMINI": "gemini-2.5-flash",
+        "DEEPSEEK": "deepseek-chat",
+        "COHERE": "command-r-plus"
+    }
+    _PROVIDER_MAP = {
+        "GEMINI": "google_genai",
+        "DEEPSEEK": "deepseek",
+        "COHERE": "cohere"
+    }
+
+    # --- Modelo Principal ---
+    @property
+    def AI_MODEL(self) -> str:
+        custom = os.getenv("MODEL_NAME_DEV")
+        if custom:
+            return custom
+        return self._MODEL_MAP.get(self.AI_SELECTOR, self._MODEL_MAP["GEMINI"])
+
+    @property
+    def AI_PROVIDER(self) -> str:
+        return self._PROVIDER_MAP.get(self.AI_SELECTOR, self._PROVIDER_MAP["GEMINI"])
+
+    # --- Modelo de Emergencia ---
+    @property
+    def AI_MODEL_EMERGENCY(self) -> str:
+        return self._MODEL_MAP.get(self.AI_SELECTOR_EMERGENCY, self._MODEL_MAP["GEMINI"])
+
+    @property
+    def AI_PROVIDER_EMERGENCY(self) -> str:
+        return self._PROVIDER_MAP.get(self.AI_SELECTOR_EMERGENCY, self._PROVIDER_MAP["GEMINI"])
+
+    
+    # Bucket
+    BUCKET_NAME: str
+    KEY_ID: str
+    KEY_NAME: str
+    APPLICATION_KEY: str
+    
+    class Config(Settings.Config):
+        # Puedes sobreescribir la configuración si es necesario
+        # pero heredando es suficiente en este caso.
+        pass
+
+class ProductionSettings(Settings):
+    AI_MODEL: str = "gpt-4o"
+    AI_PROVIDER: str = "openai"
+
+    class Config(Settings.Config):
+        pass
+
+class TestingSettings(Settings):
+    DATABASE_URL: str = "sqlite:///:memory:"
+    AI_MODEL: str = "gpt-4o-mini"
+    AI_PROVIDER: str = "openai"
+    
+    class Config(Settings.Config):
+        # Para testing, a menudo no queremos leer ningún archivo .env
+        env_file = None
+
+
+@lru_cache()
+def get_settings():
+    # La lógica es más simple ahora. La clase Settings ya sabe qué archivo leer.
+    if ENVIRONMENT == "production":
         return ProductionSettings()
-    return DevelopmentSettings()
+    elif ENVIRONMENT == "testing":
+        return TestingSettings()
+    else:
+        return DevelopmentSettings()
 
 settings = get_settings()
