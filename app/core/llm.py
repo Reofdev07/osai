@@ -18,27 +18,37 @@ rate_limiter = InMemoryRateLimiter(
 
 
 
-def create_llm():
+def create_llm(provider: str = None, model: str = None):
     """
-    Crea un objeto LLM dinámico basado en el AI_SELECTOR de settings.
-    Soporta GEMINI, DEEPSEEK y COHERE.
+    Crea un objeto LLM. Si no se pasan argumentos, usa lo configurado en el .env.
     """
-    provider = settings.AI_PROVIDER
-    model = settings.AI_MODEL
+    selected_provider = provider or settings.AI_PROVIDER
+    selected_model = model or settings.AI_MODEL
     
     kwargs = {}
-    if provider == "google_genai":
+    if selected_provider == "google_genai":
         kwargs["api_key"] = settings.GOOGLE_API_KEY
-    elif provider == "deepseek":
+    elif selected_provider == "deepseek":
         kwargs["api_key"] = settings.DEEPSEEK_API_KEY
-    elif provider == "cohere":
+    elif selected_provider == "cohere":
         kwargs["api_key"] = settings.CO_API_KEY
 
     return init_chat_model(
-        model, 
-        model_provider=provider,
+        selected_model, 
+        model_provider=selected_provider,
         rate_limiter=rate_limiter,
-        max_retries=3, # Reintentos automáticos para manejar picos de tráfico
+        max_retries=2,
         **kwargs
+    )
+
+
+def create_llm_emergency():
+    """
+    Crea el LLM de emergencia usando AI_SELECTOR_EMERGENCY del .env.
+    Se usa automáticamente si el modelo principal falla después de reintentos.
+    """
+    return create_llm(
+        provider=settings.AI_PROVIDER_EMERGENCY,
+        model=settings.AI_MODEL_EMERGENCY
     )
 

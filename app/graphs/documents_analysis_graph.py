@@ -12,6 +12,7 @@ from app.graphs.nodes.documents_analysis_nodes import (
     adaptive_ocr_orchestrator_node,
     extract_with_google_vision_node,
     extract_with_llama_parse_node,
+    extract_office_document_node,
     update_llama_parse_usage_node,
     unsupported_file_node,
     summarize_and_get_subject_node,
@@ -35,6 +36,7 @@ workflow.add_node("orchestrate_ocr", adaptive_ocr_orchestrator_node)
 workflow.add_node("text_pdf", extract_from_text_pdf_node)
 workflow.add_node("google_vision", extract_with_google_vision_node)
 workflow.add_node("llama_parse", extract_with_llama_parse_node)
+workflow.add_node("extract_office", extract_office_document_node)
 workflow.add_node("update_usage_counter", update_llama_parse_usage_node)
 
 # Nodos de análisis de contenido
@@ -57,6 +59,7 @@ workflow.add_conditional_edges(
         "pdf_text": "text_pdf",
         "pdf_scanned": "count_pages",
         "image": "count_pages",
+        "office_document": "extract_office",
         "unsupported": "unsupported"
     }
 )
@@ -86,6 +89,7 @@ workflow.add_edge("llama_parse", "update_usage_counter")
 workflow.add_edge("text_pdf", "summarize")
 workflow.add_edge("google_vision", "summarize")
 workflow.add_edge("update_usage_counter", "summarize")
+workflow.add_edge("extract_office", "summarize")
 
 # --- MEGA-ANALYSIS: Un solo nodo consolidado en vez de múltiples paralelos ---
 # El resumen nos sirve de contexto (vía TOON) para el mega-nodo.
