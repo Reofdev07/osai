@@ -44,10 +44,10 @@ class EnvironmentSettings(Settings):
     AI_SELECTOR_EMERGENCY: str = os.getenv("AI_SELECTOR_EMERGENCY", "GEMINI")
 
     # Claves originales de tu .env
-    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
-    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY")
-    CO_API_KEY: str = os.getenv("CO_API_KEY")
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+    CO_API_KEY: str = os.getenv("CO_API_KEY", "")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
     # --- Mappings reutilizables ---
     _MODEL_MAP = {
@@ -85,10 +85,10 @@ class EnvironmentSettings(Settings):
         return self._PROVIDER_MAP.get(self.AI_SELECTOR_EMERGENCY, self._PROVIDER_MAP["GEMINI"])
 
     # Bucket (Backblaze u otro S3 compatible)
-    BUCKET_NAME: str = os.getenv("BUCKET_NAME")
-    KEY_ID: str = os.getenv("KEY_ID")
-    KEY_NAME: str = os.getenv("KEY_NAME")
-    APPLICATION_KEY: str = os.getenv("APPLICATION_KEY")
+    BUCKET_NAME: str = os.getenv("BUCKET_NAME", "")
+    KEY_ID: str = os.getenv("KEY_ID", "")
+    KEY_NAME: str = os.getenv("KEY_NAME", "")
+    APPLICATION_KEY: str = os.getenv("APPLICATION_KEY", "")
 
 class DevelopmentSettings(EnvironmentSettings):
     class Config(Settings.Config):
