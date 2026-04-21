@@ -1,8 +1,7 @@
 # Entorno virtual
 .venv/
-*.env
-.env.production
-.env.development
+.env*
+.env.*
 .osai-venv/
 osai_venv/
 venv/

@@ -32,6 +32,8 @@ def create_llm(provider: str = None, model: str = None):
         kwargs["api_key"] = settings.DEEPSEEK_API_KEY
     elif selected_provider == "cohere":
         kwargs["api_key"] = settings.CO_API_KEY
+    elif selected_provider == "openai":
+        kwargs["api_key"] = settings.OPENAI_API_KEY
 
     return init_chat_model(
         selected_model, 
