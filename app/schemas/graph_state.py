@@ -45,6 +45,7 @@ class DocumentState(TypedDict):
     tags: Optional[List[str]]       # Tags generados
     entities: Optional[Dict]        # Entidades extraídas
     compliance_analysis: Optional[Dict]  # Análisis de cumplimiento
+    sensitivity: Optional[Dict]     # Análisis de sensibilidad y datos personales
     
     # Control de flujo
     tasks_requested: List[str]      # ['classify', 'summarize', 'entities', 'tags']
