@@ -63,6 +63,7 @@ async def notify_steps_to_laravel(
     
     headers = {
         "Content-Type": "application/json",
+        "X-Webhook-Secret": settings.WEBHOOK_SECRET
     }
     
     MAX_RETRIES = 3

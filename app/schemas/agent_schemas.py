@@ -74,6 +74,12 @@ class MasterEnrichmentOutput(BaseModel):
 class TagsOutput(BaseModel):
     tags: List[str] = Field(description="Lista de 5-7 etiquetas descriptivas en español.")
 
+class SensitivityOutput(BaseModel):
+    level: str = Field(description="'public' | 'internal' | 'confidential' | 'restricted'")
+    contains_sensitive_data: bool = Field(description="Determinar si contiene datos sensibles o identificables según Ley 1581 (salud, etnia, política, cédulas, RIF, direcciones, financieros)")
+    detected_categories: List[str] = Field(description="Categorías detectadas: salud, biometrico, etnia, identificacion_personal, financiero, domicilio, etc.", default_factory=list)
+    justification: str = Field(description="Explicación detallada de por qué se asignó este nivel de sensibilidad.")
+
 class MegaEnrichmentOutput(BaseModel):
     intencion: IntentAnalysis
     sentimiento_urgencia: SentimentUrgency
@@ -82,6 +88,7 @@ class MegaEnrichmentOutput(BaseModel):
     entidades: EntitiesOutput
     prioridad: PriorityOutput
     conformidad: ComplianceOutput
+    sensibilidad: SensitivityOutput
 
 class PqrsdValidationOutput(BaseModel):
     is_valid: bool = Field(description="Indica si la PQRSD es inteligible y tiene suficiente contexto mínimo (qué solicita y motivo).")
