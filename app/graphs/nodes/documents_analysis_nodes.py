@@ -488,9 +488,25 @@ async def unsupported_file_node(state: DocumentState) -> DocumentState:
 
 # === NODOS DE ANÁLISIS DE CONTENIDO (TUS PROMPTS ORIGINALES) ===
 
+def _sanitize_for_llm(text: str) -> str:
+    """Redacta patrones de datos sensibles antes de enviar al LLM externo (Minimización)."""
+    if not text: return ""
+    import re
+    # Reemplazar números de cédula (8-11 dígitos)
+    text = re.sub(r'\b\d{8,11}\b', '[ID_REDACTADO]', text)
+    # Reemplazar emails
+    text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL_REDACTADO]', text)
+    # Reemplazar teléfonos celuladores (Empiezan por 3 con 10 digitos)
+    text = re.sub(r'\b3\d{9}\b', '[TEL_REDACTADO]', text)
+    return text
+
 async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     print("--- Worker (Expert): Resumo, Asunto y Fecha ---")
-    if not state.get("raw_text", "").strip(): return {"error": "No hay texto para analizar."}
+    raw_text = state.get("raw_text", "").strip()
+    if not raw_text: return {"error": "No hay texto para analizar."}
+    
+    # MINIMIZACIÓN LEY 1581: Sanitizar antes de enviar al LLM
+    sanitized_text = _sanitize_for_llm(raw_text[:CONTEXT_WINDOW_LIMIT])
     
     prompt = f"""
     Act as a professional archivist expert in Colombian documents.
@@ -499,7 +515,7 @@ async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
     3. Identify the document date (the date of issuance as written in the text, e.g., 'Octubre 2025' or 'Octubre 1 de 2025'). 
     
     TEXT:
-    {state['raw_text'][:CONTEXT_WINDOW_LIMIT]}
+    {sanitized_text}
     """
     try:
         # Intento 1: Modelo Principal (Configurado en .env)
@@ -539,6 +555,9 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     if not raw_text:
         return {"errors": ["No hay texto para realizar el mega-análisis."]}
         
+    # MINIMIZACIÓN LEY 1581: Sanitizar antes de enviar al LLM
+    sanitized_text = _sanitize_for_llm(raw_text[:CONTEXT_WINDOW_LIMIT])
+    
     ctx = get_toon_context(state)
     
     prompt = f"""
@@ -546,7 +565,7 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     Perform a multi-dimensional analysis of the document context provided.
     
     CONTEXT (TOON): {ctx}
-    TEXT SEGMENT: {raw_text[:CONTEXT_WINDOW_LIMIT]}
+    TEXT SEGMENT: {sanitized_text}
     
     SCIENTIFIC/COGNITIVE TASKS:
     
@@ -572,6 +591,18 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     5. COMPLIANCE (Conformidad Archivística):
        - Check Sender Identification, Recipient correctness, Purpose clarity, Signature presence.
        - Summarize compliance and provide detailed recommendations.
+       
+    6. SENSITIVITY DETECTION (Detección de Datos Sensibles y Personales - Ley 1581/2012 Colombia):
+       - Identify if the document contains any of the following SENSITIVE OR PERSONAL IDENTIFIABLE DATA (PII):
+         * Health records, medical diagnoses, or biometric data.
+         * Racial or ethnic origin references.
+         * Political orientation, union membership, or philosophical beliefs.
+         * Sexual orientation or life information.
+         * Identification numbers (C.C., NIT, RIF, Pasaporte, etc.).
+         * Financial data, personal addresses (domicilio fiscal/residencial), personal phone numbers.
+       - Classify the document's sensitivity level: 'public', 'internal', 'confidential', or 'restricted'.
+       - Use 'restricted' if any of the above sensitive or personal data is found to ensure automatic masking.
+       - Provide detailed justification referencing the exact type of data found (e.g., "Contains identification number and personal address").
        
     Your output MUST be highly professional and perfectly structured. Do not invent data. Return empty structures if necessary.
     """
@@ -622,6 +653,12 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
             "cumple_normativa": data.conformidad.cumple_normativa,
             "resumen": data.conformidad.resumen_ejecutivo,
             "detalles": data.conformidad.analisis_detallado
+        },
+        "sensitivity": {
+            "level": data.sensibilidad.level,
+            "contains_sensitive_data": data.sensibilidad.contains_sensitive_data,
+            "detected_categories": data.sensibilidad.detected_categories,
+            "justification": data.sensibilidad.justification
         },
         "usage_metadata": usage
     }
