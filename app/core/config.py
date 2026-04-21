@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     
     # Webhook
     WEBHOOK_URL: str = os.getenv("WEBHOOK_URL")
-    WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET")
     
     # Langsmith
     LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT")
