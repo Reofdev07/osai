@@ -1,7 +1,10 @@
-
 import os
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+# Cargar .env para detectar el ENVIRONMENT antes de definir las clases
+load_dotenv()
 
 # Obtener el entorno PRIMERO. El valor por defecto es 'development'.
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -31,7 +34,9 @@ class Settings(BaseSettings):
         env_file = (".env", f".env.{ENVIRONMENT}")
         extra = 'ignore' # Buena práctica para ignorar campos extra en los .env
 
-class DevelopmentSettings(Settings):
+class EnvironmentSettings(Settings):
+    """Configuración extendida para entornos (Dev, Staging, Prod)"""
+    
     # Selector Principal: GEMINI | DEEPSEEK | COHERE (leído del .env)
     AI_SELECTOR: str = os.getenv("AI_SELECTOR", "GEMINI")
     
@@ -39,26 +44,29 @@ class DevelopmentSettings(Settings):
     AI_SELECTOR_EMERGENCY: str = os.getenv("AI_SELECTOR_EMERGENCY", "GEMINI")
 
     # Claves originales de tu .env
-    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
-    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY")
-    CO_API_KEY: str = os.getenv("CO_API_KEY")
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+    CO_API_KEY: str = os.getenv("CO_API_KEY", "")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
     # --- Mappings reutilizables ---
     _MODEL_MAP = {
         "GEMINI": "gemini-2.5-flash",
         "DEEPSEEK": "deepseek-chat",
-        "COHERE": "command-r-plus"
+        "COHERE": "command-r-plus",
+        "OPENAI": "gpt-4o"
     }
     _PROVIDER_MAP = {
         "GEMINI": "google_genai",
         "DEEPSEEK": "deepseek",
-        "COHERE": "cohere"
+        "COHERE": "cohere",
+        "OPENAI": "openai"
     }
 
     # --- Modelo Principal ---
     @property
     def AI_MODEL(self) -> str:
-        custom = os.getenv("MODEL_NAME_DEV")
+        custom = os.getenv("MODEL_NAME")
         if custom:
             return custom
         return self._MODEL_MAP.get(self.AI_SELECTOR, self._MODEL_MAP["GEMINI"])
@@ -76,22 +84,21 @@ class DevelopmentSettings(Settings):
     def AI_PROVIDER_EMERGENCY(self) -> str:
         return self._PROVIDER_MAP.get(self.AI_SELECTOR_EMERGENCY, self._PROVIDER_MAP["GEMINI"])
 
-    
-    # Bucket
-    BUCKET_NAME: str
-    KEY_ID: str
-    KEY_NAME: str
-    APPLICATION_KEY: str
-    
+    # Bucket (Backblaze u otro S3 compatible)
+    BUCKET_NAME: str = os.getenv("BUCKET_NAME", "")
+    KEY_ID: str = os.getenv("KEY_ID", "")
+    KEY_NAME: str = os.getenv("KEY_NAME", "")
+    APPLICATION_KEY: str = os.getenv("APPLICATION_KEY", "")
+
+class DevelopmentSettings(EnvironmentSettings):
     class Config(Settings.Config):
-        # Puedes sobreescribir la configuración si es necesario
-        # pero heredando es suficiente en este caso.
         pass
 
-class ProductionSettings(Settings):
-    AI_MODEL: str = "gpt-4o"
-    AI_PROVIDER: str = "openai"
+class StagingSettings(EnvironmentSettings):
+    class Config(Settings.Config):
+        pass
 
+class ProductionSettings(EnvironmentSettings):
     class Config(Settings.Config):
         pass
 
@@ -110,6 +117,8 @@ def get_settings():
     # La lógica es más simple ahora. La clase Settings ya sabe qué archivo leer.
     if ENVIRONMENT == "production":
         return ProductionSettings()
+    elif ENVIRONMENT == "staging":
+        return StagingSettings()
     elif ENVIRONMENT == "testing":
         return TestingSettings()
     else:
