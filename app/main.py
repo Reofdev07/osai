@@ -59,13 +59,20 @@ app.add_middleware(
 # --- INICIALIZACIÓN AUTOMÁTICA Y SEGURA ---
 # Esto se ejecuta cada vez que se inicia el servidor/worker.
 # Es seguro gracias a la idempotencia.
-print("Iniciando aplicación, verificando estado de la base de datos...")
+print(f"\n{'='*50}")
+print(f"🚀 Iniciando aplicación OSAI")
+print(f"🌍 Entorno: {settings.ENVIRONMENT}")
+print(f"🤖 LLM Principal: {settings.AI_MODEL} ({settings.AI_PROVIDER})")
+print(f"🆘 LLM Emergencia: {settings.AI_MODEL_EMERGENCY} ({settings.AI_PROVIDER_EMERGENCY})")
+print(f"{'='*50}\n")
+
+print("Verificando estado de la base de datos...")
 initialize_database()
 
 from app.utils.temp_cleaner import cleanup_stale_temp_files
 cleanup_stale_temp_files(max_age_minutes=60) # Limpieza activa de basura en cada reinicio
 
-print("Inicialización completada. La aplicación está lista.")
+print("✅ Inicialización completada. La aplicación está lista.\n")
 
 app.include_router(base_router)
 

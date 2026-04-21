@@ -8,7 +8,6 @@ load_dotenv()
 
 # Obtener el entorno PRIMERO. El valor por defecto es 'development'.
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-print(ENVIRONMENT)
 
 class Settings(BaseSettings):
     """Configuración base"""
