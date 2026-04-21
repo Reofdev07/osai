@@ -1,6 +1,4 @@
 import httpx
-import hmac
-import hashlib
 import json
 import asyncio
 import os
@@ -63,7 +61,6 @@ async def notify_steps_to_laravel(
     
     headers = {
         "Content-Type": "application/json",
-        "X-Webhook-Secret": settings.WEBHOOK_SECRET
     }
     
     MAX_RETRIES = 3
