@@ -64,6 +64,8 @@ print(f"🚀 Iniciando aplicación OSAI")
 print(f"🌍 Entorno: {settings.ENVIRONMENT}")
 print(f"🤖 LLM Principal: {settings.AI_MODEL} ({settings.AI_PROVIDER})")
 print(f"🆘 LLM Emergencia: {settings.AI_MODEL_EMERGENCY} ({settings.AI_PROVIDER_EMERGENCY})")
+print(f"👁️  LLM Visión (Primario): {settings.AI_MODEL_VISION} ({settings.AI_PROVIDER_VISION})")
+print(f"🛡️  LLM Visión (Respaldo): {settings.AI_MODEL_VISION_FALLBACK} (OpenRouter)")
 print(f"{'='*50}\n")
 
 print("Verificando estado de la base de datos...")

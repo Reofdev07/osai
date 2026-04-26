@@ -40,11 +40,11 @@ def initialize_database():
             # "INSERT OR IGNORE" es la clave para la seguridad: solo inserta si la 'key' no existe.
             # No sobrescribirá el contador actual si la aplicación se reinicia.
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
-                           ("llama_parse_usage", "0"))
+                           ("vision_api_usage", "0"))
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
                            ("google_vision_usage", "0"))
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
-                           ("llama_parse_reset_timestamp", datetime.now().isoformat()))
+                           ("usage_reset_timestamp", datetime.now().isoformat()))
             
             conn.commit()
             print(f"Base de datos '{DB_FILE}' verificada y lista.")

@@ -27,11 +27,15 @@ class Settings(BaseSettings):
     
     # Claves Externas
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    LLAMA_CLOUD_API_KEY: str = os.getenv("LLAMA_CLOUD_API_KEY")
 
     # Selectores IA
     AI_SELECTOR: str = os.getenv("AI_SELECTOR", "GEMINI")
     AI_SELECTOR_EMERGENCY: str = os.getenv("AI_SELECTOR_EMERGENCY", "GEMINI")
+    
+    # Vision Fallback (OpenRouter - The cheapest available globally)
+    AI_SELECTOR_VISION: str = os.getenv("AI_SELECTOR_VISION", "GEMINI")
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    AI_MODEL_VISION_FALLBACK: str = os.getenv("AI_MODEL_VISION_FALLBACK", "qwen/qwen-vl-plus:free")
 
     # Claves API IA
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
@@ -39,13 +43,22 @@ class Settings(BaseSettings):
     CO_API_KEY: str = os.getenv("CO_API_KEY", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
-    # Mappings de Modelos
-    _MODEL_MAP: dict = {
-        "GEMINI": "gemini-2.5-flash",
-        "DEEPSEEK": "deepseek-chat",
-        "COHERE": "command-r-plus",
-        "OPENAI": "gpt-4o"
-    }
+    # Versiones de Modelos (Configurables en .env)
+    MODEL_GEMINI: str = os.getenv("MODEL_GEMINI", "gemini-2.5-flash")
+    MODEL_DEEPSEEK: str = os.getenv("MODEL_DEEPSEEK", "deepseek-chat")
+    MODEL_COHERE: str = os.getenv("MODEL_COHERE", "command-r-plus")
+    MODEL_OPENAI: str = os.getenv("MODEL_OPENAI", "gpt-4o")
+
+    # Mappings de Modelos dinámico
+    @property
+    def _MODEL_MAP(self) -> dict:
+        return {
+            "GEMINI": self.MODEL_GEMINI,
+            "DEEPSEEK": self.MODEL_DEEPSEEK,
+            "COHERE": self.MODEL_COHERE,
+            "OPENAI": self.MODEL_OPENAI
+        }
+
     _PROVIDER_MAP: dict = {
         "GEMINI": "google_genai",
         "DEEPSEEK": "deepseek",
@@ -72,6 +85,15 @@ class Settings(BaseSettings):
     @property
     def AI_PROVIDER_EMERGENCY(self) -> str:
         return self._PROVIDER_MAP.get(self.AI_SELECTOR_EMERGENCY, self._PROVIDER_MAP["GEMINI"])
+
+    # Modelo de Visión
+    @property
+    def AI_MODEL_VISION(self) -> str:
+        return self._MODEL_MAP.get(self.AI_SELECTOR_VISION, self._MODEL_MAP["GEMINI"])
+
+    @property
+    def AI_PROVIDER_VISION(self) -> str:
+        return self._PROVIDER_MAP.get(self.AI_SELECTOR_VISION, self._PROVIDER_MAP["GEMINI"])
 
     # Bucket B2
     BUCKET_NAME: str = os.getenv("BUCKET_NAME", "")
