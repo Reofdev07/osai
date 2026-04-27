@@ -44,13 +44,15 @@ async def analyze_and_route_node(state: DocumentState) -> dict:
             print("--- Decisor: Detectado PDF. Ruta inicial: markitdown_extract ---")
             return {"file_type": "pdf_text"}
             
-        # 3. Documentos Office (MarkItDown los maneja todos localmente)
-        office_extensions = ['.docx', '.xlsx', '.csv', '.ppt', '.pptx', '.doc', '.xls']
-        if file_ext in office_extensions or any(t in mime_type for t in ['wordprocessingml', 'spreadsheetml', 'ms-excel', 'msword']):
-            print(f"--- Decisor: Detectado OFFICE ({file_ext}). Ruta: markitdown_extract ---")
+        # 3. Documentos Office y Otros (MarkItDown maneja DOCX, XLSX, CSV, TXT, HTML, etc.)
+        office_extensions = ['.docx', '.xlsx', '.csv', '.ppt', '.pptx', '.doc', '.xls', '.txt', '.html', '.xml', '.json']
+        if file_ext in office_extensions or any(t in mime_type for t in ['wordprocessingml', 'spreadsheetml', 'ms-excel', 'msword', 'text/plain', 'text/html']):
+            print(f"--- Decisor: Detectado DOCUMENTO ({file_ext}). Ruta: markitdown_extract ---")
             return {"file_type": "office_document", "page_count": 1}
             
-        return {"file_type": "unsupported"}
+        # Si es algo totalmente desconocido, igual intentamos con MarkItDown por si acaso
+        print(f"--- Decisor: Formato desconocido ({file_ext}), intentando extracción local. ---")
+        return {"file_type": "office_document", "page_count": 1}
     except Exception as e:
         print(f"Error en analyze_and_route: {e}")
         return {"file_type": "unsupported"}
