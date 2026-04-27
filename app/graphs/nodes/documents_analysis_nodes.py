@@ -8,7 +8,7 @@ import base64
 
 # --- Imports de tu propio proyecto ---
 from app.schemas.graph_state import DocumentState
-from app.schemas.agent_schemas import MegaEnrichmentOutput
+from app.schemas.agent_schemas import MegaEnrichmentOutput, ExtractionSummary
 from app.utils.token_counter import count_tokens, update_usage_metadata
 from app.core.config import settings
 from app.core.llm import create_llm, create_llm_emergency
@@ -227,65 +227,138 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
 # === NODOS DE ANÁLISIS DE CONTENIDO ===
 
 async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
-    """Genera un resumen y tema para limpiar el contexto del Mega Analysis."""
-    print("--- Worker: Generando Resumen y Subject ---")
-    raw_text = state["raw_text"]
+    """Genera un resumen, tema y fecha del documento usando salida estructurada."""
+    print("--- Worker: Generando Resumen, Subject y Fecha ---")
+    raw_text = state.get("raw_text", "")
     job_id = state.get("job_id", "N/A")
     
-    if not raw_text: return {"error": "No hay texto para resumir"}
+    if not raw_text: return {"errors": ["No hay texto para resumir"]}
     
     llm = create_llm()
-    summary_prompt = """
+    structured_llm = llm.with_structured_output(ExtractionSummary, include_raw=True)
+    
+    prompt = f"""
     Analiza el siguiente texto de forma técnica y profesional:
     1. SUBJECT: [Título descriptivo máximo 10 palabras]
     2. RESUMEN: [Un párrafo máximo 150 palabras]
+    3. FECHA: [Fecha del documento si se encuentra, YYYY-MM-DD]
     
     Texto:
-    {text}
+    {raw_text[:15000]}
     """
     try:
-        response = await llm.ainvoke(summary_prompt.format(text=raw_text[:15000]))
-        content = response.content
-        subject = "Documento"
-        summary = content
-        
-        if "SUBJECT:" in content and "RESUMEN:" in content:
-            parts = content.split("RESUMEN:")
-            subject = parts[0].replace("SUBJECT:", "").strip()
-            summary = parts[1].strip()
+        result = await structured_llm.ainvoke(prompt)
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
 
         print(f"Job [{job_id}]: Resumen generado exitosamente.")
-        return {"summary": summary, "subject": subject}
+        return {
+            "summary": data.resumen, 
+            "subject": data.asunto,
+            "document_date": data.fecha,
+            "usage_metadata": usage
+        }
     except Exception as e:
         print(f"Error resumen: {e}")
-        return {"summary": "Error al generar resumen", "subject": "Documento"}
+        return {"summary": "Error al generar resumen", "subject": "Documento", "errors": [str(e)]}
 
 async def mega_analysis_node(state: DocumentState) -> DocumentState:
     """
     El motor principal. Toma el texto estructurado y extrae metadatos.
-    Usa DeepSeek V3 por defecto con fallback a Gemini 2.5 Flash.
+    Usa el modelo configurado con fallback.
     """
-    print("--- Worker: MEGA ANALYSIS ---")
-    raw_text = state["raw_text"]
+    print("--- Worker: MEGA ANALYSIS (v3.1 Response Structure) ---")
+    raw_text = state.get("raw_text", "")
     summary = state.get("summary", "")
     subject = state.get("subject", "")
     job_id = state.get("job_id", "N/A")
 
     llm = create_llm()
-    structured_llm = llm.with_structured_output(MegaEnrichmentOutput)
+    structured_llm = llm.with_structured_output(MegaEnrichmentOutput, include_raw=True)
     
     prompt = f"Analiza el documento. Tema: {subject}. Resumen: {summary}. Texto: {raw_text[:50000]}"
     
     try:
-        analysis = await structured_llm.ainvoke(prompt)
+        result = await structured_llm.ainvoke(prompt)
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
         print(f"Job [{job_id}]: Mega Analysis completado.")
-        return {"analysis": analysis.model_dump()}
+        
+        return {
+            "intent_analysis": data.intencion.model_dump(),
+            "sentiment_analysis": {
+                "sentimiento": {
+                    "etiqueta": data.sentimiento_urgencia.etiqueta,
+                    "puntuacion": data.sentimiento_urgencia.puntuacion,
+                    "justificacion": data.sentimiento_urgencia.justificacion
+                },
+                "urgencia": {
+                    "nivel": data.sentimiento_urgencia.urgencia_nivel,
+                    "justificacion": data.sentimiento_urgencia.urgencia_justificacion
+                }
+            },
+            "classification": {
+                "tipologia_documental": data.clasificacion.tipologia_documental, 
+                "confianza": data.clasificacion.confianza
+            },
+            "tags": data.etiquetas,
+            "entities": data.entidades.model_dump(),
+            "priority_analysis": data.prioridad.model_dump(),
+            "compliance_analysis": {
+                "cumple_normativa": data.conformidad.cumple_normativa,
+                "resumen": data.conformidad.resumen_ejecutivo,
+                "detalles": data.conformidad.analisis_detallado
+            },
+            "sensitivity": {
+                "level": data.sensibilidad.level,
+                "contains_sensitive_data": data.sensibilidad.contains_sensitive_data,
+                "detected_categories": data.sensibilidad.detected_categories,
+                "justification": data.sensibilidad.justification
+            },
+            "usage_metadata": usage
+        }
     except Exception as e:
         print(f"Job [{job_id}]: Fallback Mega Analysis por error: {e}")
         emergency_llm = create_llm_emergency()
-        structured_emergency = emergency_llm.with_structured_output(MegaEnrichmentOutput)
-        analysis = await structured_emergency.ainvoke(prompt)
-        return {"analysis": analysis.model_dump()}
+        structured_emergency = emergency_llm.with_structured_output(MegaEnrichmentOutput, include_raw=True)
+        result = await structured_emergency.ainvoke(prompt)
+        data = result['parsed']
+        usage = result['raw'].usage_metadata
+        
+        return {
+            "intent_analysis": data.intencion.model_dump(),
+            "sentiment_analysis": {
+                "sentimiento": {
+                    "etiqueta": data.sentimiento_urgencia.etiqueta,
+                    "puntuacion": data.sentimiento_urgencia.puntuacion,
+                    "justificacion": data.sentimiento_urgencia.justificacion
+                },
+                "urgencia": {
+                    "nivel": data.sentimiento_urgencia.urgencia_nivel,
+                    "justificacion": data.sentimiento_urgencia.urgencia_justificacion
+                }
+            },
+            "classification": {
+                "tipologia_documental": data.clasificacion.tipologia_documental, 
+                "confianza": data.clasificacion.confianza
+            },
+            "tags": data.etiquetas,
+            "entities": data.entidades.model_dump(),
+            "priority_analysis": data.prioridad.model_dump(),
+            "compliance_analysis": {
+                "cumple_normativa": data.conformidad.cumple_normativa,
+                "resumen": data.conformidad.resumen_ejecutivo,
+                "detalles": data.conformidad.analisis_detallado
+            },
+            "sensitivity": {
+                "level": data.sensibilidad.level,
+                "contains_sensitive_data": data.sensibilidad.contains_sensitive_data,
+                "detected_categories": data.sensibilidad.detected_categories,
+                "justification": data.sensibilidad.justification
+            },
+            "usage_metadata": usage,
+            "errors": [f"Fallback Mega Analysis por error: {e}"]
+        }
 
 async def unsupported_file_node(state: DocumentState) -> DocumentState:
     """Maneja tipos de archivo no soportados."""

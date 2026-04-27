@@ -27,12 +27,10 @@ def route_after_markitdown(state: DocumentState) -> str:
     Decide si la extracción de MarkItDown fue suficiente o si necesitamos 
     intentar con visión multimodal (por si el archivo estaba realmente vacío de texto).
     """
-    error = state.get("error")
-    # 'markitdown_empty' no es un error fatal, es una señal de que necesitamos visión
     method = state.get("extraction_method")
     
-    if error and method != "markitdown_empty":
-        print(f"--- Edge (MarkItDown): Error detectado: {error}. Pasando a Vision fallback. ---")
+    if method == "markitdown_error":
+        print("--- Edge (MarkItDown): Error en MarkItDown detectado. Pasando a Vision fallback. ---")
         return "needs_vision"
     
     if method == "markitdown_empty":
