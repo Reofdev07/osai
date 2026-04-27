@@ -226,6 +226,22 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
         print(f"Error fatal en OCR: {e}")
         return {"error": str(e), "extraction_pages": 0}
 
+# --- PROMPTS ESPECIALIZADOS DE CUMPLIMIENTO (COLOMBIA) ---
+MEGA_ANALYSIS_PROMPT = """
+Actúa como un Experto Oficial de Privacidad y Oficial de Cumplimiento bajo la Ley 1581 de 2012 de Colombia (Protección de Datos Personales).
+Tu misión es realizar un análisis exhaustivo del documento para identificar y clasificar cualquier dato personal o sensible.
+
+INSTRUCCIONES DE SENSIBILIDAD (LEY 1581):
+1. IDENTIFICACIÓN DE DATOS (PII): Busca números de Cédula de Ciudadanía (DNI), pasaportes, direcciones físicas, números de teléfono, correos electrónicos y números de cuentas bancarias o tarjetas de crédito.
+2. DATOS SENSIBLES: Identifica datos de salud (clínicos), vida sexual, orientación sexual, origen racial o étnico, convicciones religiosas o políticas, afiliación a sindicatos, datos biométricos y, de especial importancia, CUALQUIER dato relacionado con NIÑOS, NIÑAS o ADOLESCENTES.
+
+REGLAS DE RESPUESTA:
+- Si detectas cualquiera de los puntos anteriores, 'contains_sensitive_data' debe ser TRUE.
+- Enumera las categorías detectadas en 'detected_categories' (ej: salud, financiero, identificacion_personal, menor_edad).
+- Justifica la decisión citando que el hallazgo está protegido por la Ley 1581 de 2012.
+- Extrae todas las entidades (personas, montos, etc.) de forma precisa.
+"""
+
 # === NODOS DE ANÁLISIS DE CONTENIDO ===
 
 async def summarize_and_get_subject_node(state: DocumentState) -> DocumentState:
@@ -278,10 +294,10 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     llm = create_llm()
     structured_llm = llm.with_structured_output(MegaEnrichmentOutput, include_raw=True)
     
-    prompt = f"Analiza el documento. Tema: {subject}. Resumen: {summary}. Texto: {raw_text[:50000]}"
+    full_prompt = f"{MEGA_ANALYSIS_PROMPT}\n\ndocumento a analizar:\nTema: {subject}\nResumen: {summary}\nTexto:\n{raw_text[:50000]}"
     
     try:
-        result = await structured_llm.ainvoke(prompt)
+        result = await structured_llm.ainvoke(full_prompt)
         data = result['parsed']
         usage = result['raw'].usage_metadata
         print(f"Job [{job_id}]: Mega Analysis completado.")
@@ -323,7 +339,7 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
         print(f"Job [{job_id}]: Fallback Mega Analysis por error: {e}")
         emergency_llm = create_llm_emergency()
         structured_emergency = emergency_llm.with_structured_output(MegaEnrichmentOutput, include_raw=True)
-        result = await structured_emergency.ainvoke(prompt)
+        result = await structured_emergency.ainvoke(full_prompt)
         data = result['parsed']
         usage = result['raw'].usage_metadata
         
