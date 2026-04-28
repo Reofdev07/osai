@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     KEY_NAME: str = os.getenv("KEY_NAME", "")
     APPLICATION_KEY: str = os.getenv("APPLICATION_KEY", "")
 
+    # Backend URL (Laravel SGD)
+    BACKEND_URL: str = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+
     class Config:
         env_file = ".env"
         extra = 'ignore'
