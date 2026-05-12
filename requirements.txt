@@ -17,6 +17,7 @@ langchain-cohere>=0.3.0
 langchain-deepseek>=0.1.0
 langgraph>=0.2.74
 langsmith>=0.1.0
+aiosqlite>=0.20.0
 
 # --- PREPROCESAMIENTO INTELIGENTE ---
 markitdown>=0.1.0

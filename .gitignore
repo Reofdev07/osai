@@ -38,6 +38,11 @@ build/
 # Archivos de pruebas
 coverage.xml
 *.cover
+
+# Persistencia de datos y base de datos local
+data/*.db
+data/*.db-shm
+data/*.db-wal
 *.py,cover
 nosetests.xml
 *.test

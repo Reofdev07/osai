@@ -104,6 +104,22 @@ class Settings(BaseSettings):
     # Backend URL (Laravel SGD)
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
+    # API Tokens para endpoints protegidos
+    @property
+    def API_TOKENS(self) -> set:
+        token_str = os.getenv("API_KEY_TOKEN", "")
+        if token_str:
+            return {t.strip() for t in token_str.split(",") if t.strip()}
+        return set()
+
+    # API Tokens para autenticacion de endpoints protegidos
+    @property
+    def API_TOKENS(self) -> set:
+        token_str = os.getenv("API_KEY_TOKEN", "")
+        if token_str:
+            return {t.strip() for t in token_str.split(",") if t.strip()}
+        return set()
+
     class Config:
         env_file = ".env"
         extra = 'ignore'

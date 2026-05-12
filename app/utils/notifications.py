@@ -3,9 +3,13 @@ import json
 import asyncio
 import os
 import time
+import hmac
+import hashlib
 from typing import Any, Dict, Optional
 
 from app.core.config import settings
+
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
 def save_pending_webhook(payload: dict):
     """Guarda en disco un webhook fallido para su posterior reenvío, optimizando el espacio."""
@@ -62,6 +66,14 @@ async def notify_steps_to_laravel(
     headers = {
         "Content-Type": "application/json",
     }
+
+    if WEBHOOK_SECRET:
+        signature = hmac.new(
+            WEBHOOK_SECRET.encode(),
+            request_body,
+            hashlib.sha256
+        ).hexdigest()
+        headers["X-Webhook-Signature"] = f"sha256={signature}"
     
     MAX_RETRIES = 3
     async with httpx.AsyncClient(timeout=15) as client:

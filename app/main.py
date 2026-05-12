@@ -76,6 +76,14 @@ cleanup_stale_temp_files(max_age_minutes=60) # Limpieza activa de basura en cada
 
 print("✅ Inicialización completada. La aplicación está lista.\n")
 
+
+@app.on_event("startup")
+async def startup_checkpointer():
+    from app.graphs.documents_analysis_graph import init_checkpointer
+    await init_checkpointer()
+    print("Checkpointer LangGraph listo.")
+
+
 app.include_router(base_router)
 
 # Solo test ojo -> luego borrar
