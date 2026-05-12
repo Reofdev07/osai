@@ -25,13 +25,10 @@ class DocumentState(TypedDict):
     
     # Tracking de Consumo de Servicios
     usage_metadata: Annotated[Dict[str, int], reduce_usage] # Consumo real de la IA (input, output, total)
-    extraction_method: Annotated[Optional[str], last_value_reducer] # native_pdf, llama_parse, google_vision
-    extraction_pages: Annotated[int, operator.add] # Cantidad de páginas procesadas por el OCR/Parser
+    extraction_method: Annotated[Optional[str], last_value_reducer] # markitdown, gemini_vision, qwen_vision, google_vision_ocr
+    extraction_pages: Annotated[int, operator.add] # Cantidad de páginas procesadas por el extractor
     
     step: str | None
-    
-    ocr_provider: Optional[str] | None # google_vision, llama_parse
-    ocr_provider_decision: Optional[str] | None # llama_parse, google_vision
     
     
     # Análisis IA

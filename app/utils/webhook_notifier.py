@@ -1,3 +1,7 @@
+# DEPRECADO: Esta clase fue reemplazada por notify_steps_to_laravel() en notifications.py
+# que ahora incluye firma HMAC, reintentos y persistencia en disco.
+# Mantener solo como referencia. No usar en codigo nuevo.
+
 import aiohttp
 import asyncio
 import hashlib

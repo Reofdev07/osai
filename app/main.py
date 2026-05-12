@@ -64,6 +64,8 @@ print(f"🚀 Iniciando aplicación OSAI")
 print(f"🌍 Entorno: {settings.ENVIRONMENT}")
 print(f"🤖 LLM Principal: {settings.AI_MODEL} ({settings.AI_PROVIDER})")
 print(f"🆘 LLM Emergencia: {settings.AI_MODEL_EMERGENCY} ({settings.AI_PROVIDER_EMERGENCY})")
+print(f"👁️  LLM Visión (Primario): {settings.AI_MODEL_VISION} ({settings.AI_PROVIDER_VISION})")
+print(f"🛡️  LLM Visión (Respaldo): {settings.AI_MODEL_VISION_FALLBACK} (OpenRouter)")
 print(f"{'='*50}\n")
 
 print("Verificando estado de la base de datos...")
@@ -73,6 +75,14 @@ from app.utils.temp_cleaner import cleanup_stale_temp_files
 cleanup_stale_temp_files(max_age_minutes=60) # Limpieza activa de basura en cada reinicio
 
 print("✅ Inicialización completada. La aplicación está lista.\n")
+
+
+@app.on_event("startup")
+async def startup_checkpointer():
+    from app.graphs.documents_analysis_graph import init_checkpointer
+    await init_checkpointer()
+    print("Checkpointer LangGraph listo.")
+
 
 app.include_router(base_router)
 

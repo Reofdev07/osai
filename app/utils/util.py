@@ -47,7 +47,9 @@ async def process_document_graph(file_path: str, job_id: str):
     accumulated_state = initial_state.copy()
     background_tasks = set()
 
-    async for step in app_graph.astream(initial_state):
+    config = {"configurable": {"thread_id": job_id}}
+
+    async for step in app_graph.astream(initial_state, config=config):
         
         for node_name, step_output in step.items():
             print(f"Job [{job_id}]: Progreso -> Nodo '{node_name}' completado.")

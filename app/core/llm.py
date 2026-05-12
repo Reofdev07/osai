@@ -1,5 +1,6 @@
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain.chat_models import init_chat_model
+from langchain_openai import ChatOpenAI
 
 from dotenv import load_dotenv
 
@@ -52,5 +53,27 @@ def create_llm_emergency():
     return create_llm(
         provider=settings.AI_PROVIDER_EMERGENCY,
         model=settings.AI_MODEL_EMERGENCY
+    )
+
+
+def create_llm_vision():
+    """LLM dedicado para tareas de visión (OCR multimodal)."""
+    return create_llm(
+        provider=settings.AI_PROVIDER_VISION,
+        model=settings.AI_MODEL_VISION
+    )
+
+
+def create_llm_vision_fallback():
+    """
+    LLM de respaldo para visión: vía OpenRouter.
+    Permite acceso a la variante gratuita de Qwen u otras ultrabaratas.
+    """
+    return ChatOpenAI(
+        model=settings.AI_MODEL_VISION_FALLBACK,
+        openai_api_base="https://openrouter.ai/api/v1",
+        openai_api_key=settings.OPENROUTER_API_KEY,
+        max_retries=2,
+        rate_limiter=rate_limiter
     )
 
