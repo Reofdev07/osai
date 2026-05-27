@@ -86,11 +86,31 @@ Para instalar el proyecto, sigue los siguientes pasos:
 6. Abrir un navegador web y ingresar la URL `http://127.0.0.1:8001/docs`.
 7. ¡Ya está! 🎉
 
+## Producción / Mantenimiento
+
+### CRON — Limpieza de webhooks fallidos
+
+OSAI guarda en disco webhooks que no pudieron entregarse a Laravel después de 3 intentos.
+Para evitar acumulación, agregar al crontab del servidor:
+
+```bash
+crontab -e
+```
+
+```cron
+0 4 * * * cd /ruta/a/OSAI && python3 scripts/cleanup_webhooks.py >> logs/cleanup_webhooks.log 2>&1
+```
+
+El script elimina archivos `.json` en `data/pending_webhooks/` y `data/pending_portal_webhooks/`
+con más de 7 días de antigüedad, o si exceden 500 archivos o 100 MB por directorio.
+
+Además, al iniciar OSAI (`app/main.py:75`), `temp_cleaner.py` ya limpia archivos temporales
+y webhooks pendientes con más de 24 horas.
+
 ## Contribuciones
 Si deseas contribuir al proyecto, puedes hacerlo de varias maneras:
 
 1. Reportando errores o sugiriendo mejoras en la documentación.
 2. Agregando nuevas funcionalidades o mejoras en la API.
-3. Agregando nuevos modelos de IA o mejoras en los modelos existentes.
-4. Agregando nuevos modelos de IA o mejoras en los modelos existentes.  
+3. Agregando nuevos modelos de IA o mejoras en los modelos existentes.  
 
