@@ -45,3 +45,49 @@ async def pqrsd_improver_agent(tipo_solicitud: str, subject: str, hechos: str, p
     except Exception as e:
         print(f"Error improving text: {e}")
         return {"improved_text": raw_input, "usage": {}}
+
+async def improve_single_field(field: str, text: str, context: str = "") -> dict:
+    """
+    Toma un solo campo (subject, hechos o peticiones) y mejora su redacción:
+    gramática, ortografía, claridad y tono formal. No cambia el significado ni inventa datos.
+    """
+    llm = create_llm()
+
+    field_labels = {
+        "subject": "Asunto",
+        "hechos": "Descripción de los Hechos",
+        "peticiones": "Petición Concreta",
+    }
+
+    label = field_labels.get(field, field)
+
+    system_prompt = (
+        "Eres un corrector de estilo para documentos jurídicos colombianos. "
+        f"El ciudadano escribió el campo '{label}' de una PQRSD. "
+        "Tu tarea es mejorar ÚNICAMENTE la redacción de este texto: corrige ortografía, "
+        "gramática, puntuación y mejora la claridad y tono formal. "
+        "REGLAS:\n"
+        "1. NO cambies el significado ni el contenido de lo que el ciudadano quiere decir.\n"
+        "2. NO inventes nombres, fechas, lugares ni hechos que no estén en el texto original.\n"
+        "3. NO agregues encabezados ni estructura de documento completo.\n"
+        "4. Devuelve ÚNICAMENTE el texto mejorado, sin explicaciones ni comentarios adicionales."
+    )
+
+    context_info = f"\n\nContexto adicional (tipo de PQRSD): {context}" if context else ""
+    user_message = f"Mejora la redacción del siguiente texto del campo '{label}':{context_info}\n\n{text}"
+
+    prompt = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_message)
+    ]
+
+    try:
+        response = await llm.ainvoke(prompt)
+        usage = response.usage_metadata if hasattr(response, "usage_metadata") and response.usage_metadata else {}
+        return {
+            "improved_text": response.content.strip(),
+            "usage": usage
+        }
+    except Exception as e:
+        print(f"Error improving field '{field}': {e}")
+        return {"improved_text": text, "usage": {}}

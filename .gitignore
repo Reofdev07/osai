@@ -43,6 +43,8 @@ coverage.xml
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/pending_webhooks/
+data/pending_portal_webhooks/
 *.py,cover
 nosetests.xml
 *.test
