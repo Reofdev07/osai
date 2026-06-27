@@ -21,10 +21,10 @@ class Settings(BaseSettings):
     PORTAL_WEBHOOK_URL: str = os.getenv("PORTAL_WEBHOOK_URL", "")
     
     # Langsmith
-    LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT")
+    LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
     LANGSMITH_TRACING: bool = True
-    LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT")
-    LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY")
+    LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT", "Osai")
+    LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY", "")
     
     # Claves Externas
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -106,14 +106,6 @@ class Settings(BaseSettings):
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
     # API Tokens para endpoints protegidos
-    @property
-    def API_TOKENS(self) -> set:
-        token_str = os.getenv("API_KEY_TOKEN", "")
-        if token_str:
-            return {t.strip() for t in token_str.split(",") if t.strip()}
-        return set()
-
-    # API Tokens para autenticacion de endpoints protegidos
     @property
     def API_TOKENS(self) -> set:
         token_str = os.getenv("API_KEY_TOKEN", "")

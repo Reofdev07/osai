@@ -18,9 +18,6 @@ credentials/
 __pycache__/
 *.py[cod]
 
-# Archivos de inicialización de Python
-**/__init__.py
-
 # Archivos de configuración de IDEs
 .vscode/
 .idea/
