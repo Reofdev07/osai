@@ -292,13 +292,15 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     job_id = state.get("job_id", "N/A")
 
     llm = create_llm()
-    structured_llm = llm.with_structured_output(MegaEnrichmentOutput, include_raw=True)
+    structured_llm = llm.with_structured_output(MegaEnrichmentOutput, method='json_schema', include_raw=True)
     
     full_prompt = f"{MEGA_ANALYSIS_PROMPT}\n\ndocumento a analizar:\nTema: {subject}\nResumen: {summary}\nTexto:\n{raw_text[:50000]}"
     
     try:
         result = await structured_llm.ainvoke(full_prompt)
         data = result['parsed']
+        if data is None:
+            raise ValueError(f"Structured output returned None. Parsing error: {result.get('parsing_error')}")
         usage = result['raw'].usage_metadata
         print(f"Job [{job_id}]: Mega Analysis completado.")
         
@@ -341,6 +343,18 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
         structured_emergency = emergency_llm.with_structured_output(MegaEnrichmentOutput, include_raw=True)
         result = await structured_emergency.ainvoke(full_prompt)
         data = result['parsed']
+        if data is None:
+            print(f"Job [{job_id}]: ⚠️ Emergency fallback también devolvió None. Usando datos por defecto.")
+            data = MegaEnrichmentOutput(
+                intencion={"intencion": "No determinado", "justificacion": "Error en el análisis"},
+                sentimiento_urgencia={"etiqueta": "Neutro", "puntuacion": 0, "justificacion": "", "urgencia_nivel": "Baja", "urgencia_justificacion": ""},
+                clasificacion={"tipologia_documental": "Documento", "confianza": 0},
+                etiquetas=[],
+                entidades={"personas_naturales": [], "personas_juridicas": [], "fechas": [], "montos": [], "codigos": [], "otros": [], "linea_de_tiempo": [], "hechos_relevantes": []},
+                prioridad={"prioridad": "Baja", "justificacion_legal": "", "termino_respuesta_sugerido_dias": 1},
+                conformidad={"cumple_normativa": True, "resumen_ejecutivo": "", "analisis_detallado": ""},
+                sensibilidad={"level": "public", "contains_sensitive_data": False, "detected_categories": [], "justification": ""},
+            )
         usage = result['raw'].usage_metadata
         
         return {
