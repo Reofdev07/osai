@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir --retries 30 --prefer-binary \
 RUN pip install --no-cache-dir --retries 30 --prefer-binary \
     langgraph langgraph-checkpoint-sqlite langsmith aiosqlite
 RUN for i in $(seq 1 10); do \
-        pip install --no-cache-dir --retries 10 --prefer-binary markitdown 2>&1 && break; \
+        pip install --no-cache-dir --retries 10 --prefer-binary 'markitdown[pdf]' 2>&1 && break; \
         echo "=== Intento $i/10 falló, reintentando en 15s... ==="; \
         sleep 15; \
     done
