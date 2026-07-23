@@ -1,4 +1,5 @@
 
+import asyncio
 import os
 import logging
 
@@ -82,6 +83,11 @@ async def startup_checkpointer():
     from app.graphs.documents_analysis_graph import init_checkpointer
     await init_checkpointer()
     print("Checkpointer LangGraph listo.")
+
+    # Iniciar worker de cola offline para jobs de IA pendientes
+    from app.core.offline_queue import process_pending_jobs
+    asyncio.create_task(process_pending_jobs())
+    print("Worker de cola offline iniciado.")
 
 
 app.include_router(base_router)

@@ -39,13 +39,26 @@ def initialize_database():
             # 2. Insertar valores iniciales si no existen.
             # "INSERT OR IGNORE" es la clave para la seguridad: solo inserta si la 'key' no existe.
             # No sobrescribirá el contador actual si la aplicación se reinicia.
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                            ("vision_api_usage", "0"))
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                            ("google_vision_usage", "0"))
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                            ("usage_reset_timestamp", datetime.now().isoformat()))
-            
+
+            # 3. Tabla de cola de procesamiento offline
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pending_ai_jobs (
+                id TEXT PRIMARY KEY,
+                document_id INTEGER,
+                file_url TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at TEXT,
+                retry_count INTEGER DEFAULT 0,
+                last_error TEXT
+            )
+            """)
+
             conn.commit()
             print(f"Base de datos '{DB_FILE}' verificada y lista.")
             
