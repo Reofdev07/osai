@@ -57,6 +57,7 @@ async def improve_single_field(field: str, text: str, context: str = "") -> dict
         "subject": "Asunto",
         "hechos": "Descripción de los Hechos",
         "peticiones": "Petición Concreta",
+        "description": "Descripción / Observaciones",
     }
 
     label = field_labels.get(field, field)
