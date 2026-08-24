@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     
     # Langsmith
     LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-    LANGSMITH_TRACING: bool = True
+    LANGSMITH_TRACING: bool = False
     LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT", "Osai")
     LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY", "")
     
