@@ -161,5 +161,5 @@ async def expert_chat_stream_generator(full_payload: dict):
     try:
         if 'self_usage' in locals():
             yield json.dumps({"type": "usage", "data": self_usage}, ensure_ascii=False) + "\n"
-    except:
-        pass
+    except Exception as e:
+        print(f"⚠️ No se pudo enviar usage en chat_expert_agent: {e}")

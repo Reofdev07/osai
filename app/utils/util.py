@@ -168,9 +168,14 @@ async def stream_download_file(url: str, job_id: str):
             async with httpx.AsyncClient() as client:
                 async with client.stream("GET", str(url), follow_redirects=False, timeout=60.0) as response:
                     response.raise_for_status()
-                    
+                    MAX_BYTES = 100 * 1024 * 1024  # 100 MB de tope anti-DoS
+                    downloaded = 0
                     with open(temp_file_path, "wb") as f:
                         async for chunk in response.aiter_bytes():
+                            downloaded += len(chunk)
+                            if downloaded > MAX_BYTES:
+                                print(f"❌ ERROR [Job {job_id}]: Archivo excede el límite de 100 MB. Abortando.")
+                                return
                             f.write(chunk)
             
             print(f"📥 Job [{job_id}]: Descarga completada. El archivo está listo en {temp_file_path}")

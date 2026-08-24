@@ -49,8 +49,8 @@ def cleanup_stale_temp_files(max_age_minutes: int = 60):
                     if (current_time - os.path.getmtime(filepath)) > 86400:  # 24 horas
                         os.remove(filepath)
                         webhook_deleted_files.append(filepath)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"⚠️ No se pudo eliminar webhook pendiente {filepath}: {e}")
 
             webhook_deleted = len(webhook_deleted_files)
             if webhook_deleted > 0:

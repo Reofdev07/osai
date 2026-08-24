@@ -50,6 +50,7 @@ async def basic_response_agent(context_payload: dict):
             yield json.dumps({"type": "usage", "data": usage_data}, ensure_ascii=False) + "\n"
 
     except Exception as e:
-        yield json.dumps({"type": "error", "content": str(e)}, ensure_ascii=False) + "\n"
+        print(f"❌ Error en basic_response_agent: {e}")
+        yield json.dumps({"type": "error", "content": "Error interno al generar la respuesta"}, ensure_ascii=False) + "\n"
 
     
