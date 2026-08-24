@@ -15,21 +15,6 @@ MAX_RETRIES = 5
 RETRY_DELAYS = [30, 60, 120, 300, 600]  # segundos
 
 
-async def add_pending_job(job_id: str, document_id: int, file_url: str) -> None:
-    """Agrega un job a la cola pendiente para procesamiento posterior."""
-    try:
-        with get_db_connection() as conn:
-            conn.execute(
-                """INSERT OR IGNORE INTO pending_ai_jobs (id, document_id, file_url, status, created_at)
-                   VALUES (?, ?, ?, 'pending', ?)""",
-                (job_id, document_id, file_url, datetime.now().isoformat()),
-            )
-            conn.commit()
-        logger.info(f"Job pendiente agregado: {job_id} (doc {document_id})")
-    except Exception as e:
-        logger.error(f"Error al agregar job pendiente {job_id}: {e}")
-
-
 async def mark_job_completed(job_id: str) -> None:
     """Marca un job como completado."""
     try:
