@@ -100,10 +100,4 @@ bucket = b2_service.get_bucket()
 @app.get("/info")
 def read_root():
     return {
-        "message": f" Hello, World! the app: {settings.APP_NAME} is Running in {settings.ENVIRONMENT} mode. bucket: {bucket.name}"} 
-
-@app.get("/test")
-def test_llm():
-    llm = create_llm()
-    response = llm.invoke("¿Cuál es el nombre de tu modelo?")
-    return {"response": response}
+        "message": f" Hello, World! the app: {settings.APP_NAME} is Running in {settings.ENVIRONMENT} mode. bucket: {bucket.name}"}
