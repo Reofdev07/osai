@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from ..graphs.portal_pqrsd_graph import portal_graph
 from .portal_notifications import notify_portal_steps
+from .url_security import is_safe_url
 
 
 async def portal_process_document_graph(file_path: str, job_id: str):
@@ -56,8 +57,13 @@ async def portal_stream_download_file(url: str, job_id: str):
                 return
             with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension, prefix="osai_portal_") as temp_file:
                 temp_file_path = temp_file.name
+            # --- SEGURIDAD SSRF: validar la URL antes de descargarla ---
+            if not is_safe_url(str(url)):
+                print(f"Job [{job_id}]: URL no permitida (posible SSRF). Abortando.")
+                return
+
             async with httpx.AsyncClient() as client:
-                async with client.stream("GET", str(url), follow_redirects=True, timeout=60.0) as response:
+                async with client.stream("GET", str(url), follow_redirects=False, timeout=60.0) as response:
                     response.raise_for_status()
                     with open(temp_file_path, "wb") as f:
                         async for chunk in response.aiter_bytes():

@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from ..graphs.documents_analysis_graph import app_graph
 from .notifications import notify_steps_to_laravel
+from .url_security import is_safe_url
 
 
 # En tu archivo principal (donde llamas al grafo)
@@ -158,9 +159,14 @@ async def stream_download_file(url: str, job_id: str):
 
             print(f"📥 Job [{job_id}]: Se usará el archivo temporal: {temp_file_path}")
 
+            # --- SEGURIDAD SSRF: validar la URL antes de descargarla ---
+            if not is_safe_url(str(url)):
+                print(f"❌ ERROR [Job {job_id}]: URL no permitida (posible SSRF). Abortando.")
+                return
+
             # --- PARTE 2: DESCARGA COMPLETA (sin cambios) ---
             async with httpx.AsyncClient() as client:
-                async with client.stream("GET", str(url), follow_redirects=True, timeout=60.0) as response:
+                async with client.stream("GET", str(url), follow_redirects=False, timeout=60.0) as response:
                     response.raise_for_status()
                     
                     with open(temp_file_path, "wb") as f:

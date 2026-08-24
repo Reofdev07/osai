@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     # Backend URL (Laravel SGD)
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
+    # SSRF: sufijos de host permitidos para descargar archivos (separados por coma)
+    # Ej: backblazeb2.com,s3.amazonaws.com,contabo.com
+    ALLOWED_DOWNLOAD_HOSTS: str = os.getenv("ALLOWED_DOWNLOAD_HOSTS", "")
+
     # API Tokens para endpoints protegidos
     @property
     def API_TOKENS(self) -> set:
