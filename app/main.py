@@ -86,13 +86,15 @@ async def startup_checkpointer():
 
     # Iniciar worker de cola offline para jobs de IA pendientes
     from app.core.offline_queue import process_pending_jobs
-    asyncio.create_task(process_pending_jobs())
-    print("Worker de cola offline iniciado.")
+    if settings.BACKGROUND_WORKER:
+        asyncio.create_task(process_pending_jobs())
+        print("Worker de cola offline iniciado.")
 
     # Iniciar worker de reenvío de webhooks pendientes a Laravel
     from app.utils.webhook_retry import start_webhook_retry_worker
-    asyncio.create_task(start_webhook_retry_worker())
-    print("Worker de reenvío de webhooks pendientes iniciado.")
+    if settings.BACKGROUND_WORKER:
+        asyncio.create_task(start_webhook_retry_worker())
+        print("Worker de reenvío de webhooks pendientes iniciado.")
 
 
 app.include_router(base_router)

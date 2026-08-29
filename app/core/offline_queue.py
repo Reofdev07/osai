@@ -44,9 +44,18 @@ async def mark_job_failed(job_id: str, error_message: str) -> None:
 
 
 async def get_pending_jobs(limit: int = MAX_CONCURRENT_JOBS):
-    """Obtiene jobs pendientes que no han excedido el máximo de reintentos."""
+    """Claim atómico de jobs pendientes.
+
+    Usa BEGIN IMMEDIATE para adquirir el write-lock de SQLite de forma
+    exclusiva mientras selecciona y marca los jobs como 'processing' en la
+    misma transacción. Así, con varios workers uvicorn (--workers N) ningún
+    job es procesado dos veces.
+    """
     try:
         with get_db_connection() as conn:
+            # BEGIN IMMEDIATE: toma el write-lock al instante, serializando a
+            # los demás workers hasta que esta transacción haga commit.
+            conn.execute("BEGIN IMMEDIATE")
             conn.row_factory = None  # Usar tuplas
             cursor = conn.execute(
                 """SELECT id, document_id, file_url, retry_count
@@ -56,7 +65,18 @@ async def get_pending_jobs(limit: int = MAX_CONCURRENT_JOBS):
                    LIMIT ?""",
                 (MAX_RETRIES, limit),
             )
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+
+            if rows:
+                ids = [r[0] for r in rows]
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"UPDATE pending_ai_jobs SET status = 'processing' WHERE id IN ({placeholders})",
+                    ids,
+                )
+
+            conn.commit()
+            return rows
     except Exception as e:
         logger.error(f"Error al obtener jobs pendientes: {e}")
         return []

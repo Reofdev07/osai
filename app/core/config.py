@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "Osai"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+
+    # Worker de tareas en background (cola offline + webhook retry).
+    # Con multiples workers uvicorn (--workers N) este flag debe estar activo
+    # SOLO en una instancia para evitar procesamiento duplicado.
+    BACKGROUND_WORKER: bool = os.getenv("BACKGROUND_WORKER", "true").lower() in ("1", "true", "yes", "on")
     
     # Webhook
     WEBHOOK_URL: str = os.getenv("WEBHOOK_URL")
