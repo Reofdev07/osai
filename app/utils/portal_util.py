@@ -54,12 +54,22 @@ async def portal_stream_download_file(url: str, job_id: str):
             _, file_extension = os.path.splitext(os.path.basename(parsed_url.path))
             if not file_extension:
                 print(f"Job [{job_id}]: La ruta de la URL no contiene una extensión de archivo válida.")
+                await notify_portal_steps(
+                    job_id=job_id, node_name="download",
+                    status="failed_terminal",
+                    data={"error": "La URL no contiene una extensión de archivo válida."},
+                )
                 return
             with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension, prefix="osai_portal_") as temp_file:
                 temp_file_path = temp_file.name
             # --- SEGURIDAD SSRF: validar la URL antes de descargarla ---
             if not is_safe_url(str(url)):
                 print(f"Job [{job_id}]: URL no permitida (posible SSRF). Abortando.")
+                await notify_portal_steps(
+                    job_id=job_id, node_name="download",
+                    status="failed_terminal",
+                    data={"error": "URL no permitida (posible SSRF)."},
+                )
                 return
 
             async with httpx.AsyncClient() as client:
@@ -72,6 +82,11 @@ async def portal_stream_download_file(url: str, job_id: str):
                             downloaded += len(chunk)
                             if downloaded > MAX_BYTES:
                                 print(f"Job [{job_id}]: Archivo excede el límite de 100 MB. Abortando.")
+                                await notify_portal_steps(
+                                    job_id=job_id, node_name="download",
+                                    status="failed_terminal",
+                                    data={"error": "El archivo excede el límite de 100 MB."},
+                                )
                                 return
                             f.write(chunk)
             await portal_process_document_graph(file_path=temp_file_path, job_id=job_id)
@@ -79,6 +94,11 @@ async def portal_stream_download_file(url: str, job_id: str):
             print(f"Error en Job [{job_id}]: {e}")
             import traceback
             traceback.print_exc()
+            await notify_portal_steps(
+                job_id=job_id, node_name="download",
+                status="failed_terminal",
+                data={"error": str(e)},
+            )
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
                 os.remove(temp_file_path)

@@ -151,6 +151,11 @@ async def stream_download_file(url: str, job_id: str):
             
             except ValueError as e:
                 print(f"❌ ERROR [Job {job_id}]: {e}. Abortando.")
+                await notify_steps_to_laravel(
+                    job_id=job_id, node_name="download",
+                    status="failed_terminal",
+                    data={"error": "La URL no contiene una extensión de archivo válida."},
+                )
                 return
 
             # Crear una ruta de archivo temporal SEGURA y CON la extensión correcta.
@@ -162,6 +167,11 @@ async def stream_download_file(url: str, job_id: str):
             # --- SEGURIDAD SSRF: validar la URL antes de descargarla ---
             if not is_safe_url(str(url)):
                 print(f"❌ ERROR [Job {job_id}]: URL no permitida (posible SSRF). Abortando.")
+                await notify_steps_to_laravel(
+                    job_id=job_id, node_name="download",
+                    status="failed_terminal",
+                    data={"error": "URL no permitida (posible SSRF)."},
+                )
                 return
 
             # --- PARTE 2: DESCARGA COMPLETA (sin cambios) ---
@@ -175,6 +185,11 @@ async def stream_download_file(url: str, job_id: str):
                             downloaded += len(chunk)
                             if downloaded > MAX_BYTES:
                                 print(f"❌ ERROR [Job {job_id}]: Archivo excede el límite de 100 MB. Abortando.")
+                                await notify_steps_to_laravel(
+                                    job_id=job_id, node_name="download",
+                                    status="failed_terminal",
+                                    data={"error": "El archivo excede el límite de 100 MB."},
+                                )
                                 return
                             f.write(chunk)
             
@@ -187,6 +202,11 @@ async def stream_download_file(url: str, job_id: str):
             print(f"❌ ERROR en Job [{job_id}]: {e}")
             import traceback
             traceback.print_exc()
+            await notify_steps_to_laravel(
+                job_id=job_id, node_name="download",
+                status="failed_terminal",
+                data={"error": str(e)},
+            )
         
         finally:
             # --- PARTE 4: LIMPIEZA (sin cambios) ---
