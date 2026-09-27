@@ -92,10 +92,5 @@ async def notify_steps_to_laravel(
                 else:
                     print(f"❌ Fallaron los {MAX_RETRIES} intentos de webhook al job {job_id}.")
                     
-                    # --- FILTRO: No guardar basura de Excel en disco ---
-                    if node_name == "extract_office":
-                        print(f"🚫 Nodo '{node_name}' falló pero NO se guardará respaldo (basura Excel detectada).")
-                    else:
-                        save_pending_webhook(payload)
-                        
+                    save_pending_webhook(payload)
                     return False

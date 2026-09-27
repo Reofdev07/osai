@@ -106,5 +106,4 @@ bucket = b2_service.get_bucket()
 # Endpoint de información general
 @app.get("/info")
 def read_root():
-    return {
-        "message": f" Hello, World! the app: {settings.APP_NAME} is Running in {settings.ENVIRONMENT} mode. bucket: {bucket.name}"}
+    return {"status": "ok", "app": settings.APP_NAME}
