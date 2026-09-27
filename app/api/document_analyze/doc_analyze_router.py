@@ -1,4 +1,5 @@
 import uuid
+import logging
 
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -9,6 +10,10 @@ from ...utils.util import stream_download_file
 from ...agents.basic_response_agent import basic_response_agent
 from ...agents.chat_expert_agent import expert_chat_stream_generator
 from ...agents.typology_suggestion_agent import suggest_typology_agent
+from ...core.database import get_db_connection
+from ...core.offline_queue import mark_job_completed, mark_job_failed
+
+logger = logging.getLogger(__name__)
 
 # Crear el router
 doc_analyze_router = APIRouter(
@@ -23,18 +28,38 @@ class FileUrlRequest(BaseModel):
 
 @doc_analyze_router.post("/analyze")
 async def analyze_url(
-    request: FileUrlRequest , 
-    background_tasks: BackgroundTasks
-    ):
-        job_id = str(uuid.uuid4())
-        
-        background_tasks.add_task(stream_download_file, request.file_url, job_id)
-        
-        return {
-        "message": "El procesamiento del documento ha comenzado.", 
+    request: FileUrlRequest,
+    background_tasks: BackgroundTasks,
+):
+    job_id = str(uuid.uuid4())
+
+    try:
+        from datetime import datetime
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO pending_ai_jobs
+                   (id, document_id, file_url, status, created_at, retry_count)
+                   VALUES (?, ?, ?, 'processing', ?, 0)""",
+                (job_id, request.document_id, str(request.file_url), datetime.now().isoformat()),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.error(f"No se pudo persistir job {job_id} en la cola: {e}")
+
+    async def _run_and_track(file_url, jid):
+        try:
+            await stream_download_file(file_url, jid)
+            await mark_job_completed(jid)
+        except Exception as exc:
+            await mark_job_failed(jid, str(exc)[:500])
+            raise
+
+    background_tasks.add_task(_run_and_track, request.file_url, job_id)
+
+    return {
+        "message": "El procesamiento del documento ha comenzado.",
         "job_id": job_id,
-        
-        }
+    }
 
 
 
