@@ -7,6 +7,21 @@ import os
 _checkpointer: AsyncSqliteSaver | None = None
 
 
+async def _prune_old_checkpoints(conn, max_age_days: int = 7):
+    """Elimina checkpoints con más de max_age_days días para evitar crecimiento indefinido de la DB."""
+    try:
+        cursor = await conn.execute(
+            "DELETE FROM checkpoints WHERE thread_ts < datetime('now', ?)",
+            (f"-{max_age_days} days",),
+        )
+        await conn.commit()
+        deleted = cursor.rowcount
+        if deleted:
+            print(f"🧹 Checkpointer: {deleted} checkpoints antiguos eliminados (>{max_age_days}d).")
+    except Exception as e:
+        print(f"⚠️ No se pudieron podar checkpoints (tabla puede no existir aún): {e}")
+
+
 async def init_checkpointer() -> AsyncSqliteSaver:
     global _checkpointer
     if _checkpointer is None:
@@ -14,6 +29,7 @@ async def init_checkpointer() -> AsyncSqliteSaver:
         conn = await aiosqlite.connect("data/graph_checkpoints.db")
         _checkpointer = AsyncSqliteSaver(conn)
         app_graph.checkpointer = _checkpointer
+        await _prune_old_checkpoints(conn)
         print("Checkpointer AsyncSqliteSaver inicializado.")
     return _checkpointer
 

@@ -37,10 +37,11 @@ def create_llm(provider: str = None, model: str = None):
         kwargs["api_key"] = settings.OPENAI_API_KEY
 
     return init_chat_model(
-        selected_model, 
+        selected_model,
         model_provider=selected_provider,
         rate_limiter=rate_limiter,
         max_retries=2,
+        timeout=180,
         **kwargs
     )
 
@@ -74,6 +75,7 @@ def create_llm_vision_fallback():
         openai_api_base="https://openrouter.ai/api/v1",
         openai_api_key=settings.OPENROUTER_API_KEY,
         max_retries=2,
+        timeout=180,
         rate_limiter=rate_limiter
     )
 

@@ -84,7 +84,12 @@ async def process_document_graph(file_path: str, job_id: str):
             task.add_done_callback(background_tasks.discard)
 
     final_state = accumulated_state
-    
+
+    # Truncar raw_text para no enviar megabytes de texto crudo por webhook
+    MAX_RAW_TEXT = 50000
+    if "raw_text" in final_state and isinstance(final_state["raw_text"], str) and len(final_state["raw_text"]) > MAX_RAW_TEXT:
+        final_state["raw_text"] = final_state["raw_text"][:MAX_RAW_TEXT] + "... [TRUNCADO]"
+
     # Evaluación del estado final para enviar alertas claras
     final_status = "finished"
     final_message = "Proceso completado."
