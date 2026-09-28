@@ -1,31 +1,20 @@
 """
-Reenvío de webhooks pendientes a Laravel.
+Reenvío de webhooks pendientes a Laravel (outbox en disco, ver webhook_outbox.py).
 
-Cuando OSAI no puede notificar a Laravel (caída/red), el payload se guarda en
-disco (data/pending_webhooks/ y data/pending_portal_webhooks/). Este módulo
-reintenta entregarlos periódicamente:
-
-- Firma cada payload de nuevo con HMAC-SHA256 (mismo formato que notifications.py).
-- Hace POST al WEBHOOK_URL / PORTAL_WEBHOOK_URL correspondiente.
-- Si responde 2xx -> borra el archivo (entregado).
-- Si falla -> conserva el archivo para el siguiente intento.
-
-Se inicia como tarea asyncio en el startup de la app (app/main.py), de forma
-análoga al worker de la cola offline (process_pending_jobs).
-
-Importante: Laravel ya trata los webhooks de forma idempotente, así que reenviar
-un 'finished' ya procesado no duplica telemetría ni trazabilidad.
+Cada ciclo, por directorio:
+- Recupera archivos reclamados por un proceso que murió a mitad del envío.
+- Reclama cada pendiente (rename atómico) antes de enviarlo: con varios workers no se duplica.
+- 2xx -> borra; respuesta permanente (400/404/409/410/422) -> dead_webhooks; otro fallo -> vuelve
+  a pendientes con un intento más, y al llegar a WEBHOOK_MAX_ATTEMPTS pasa a dead_webhooks.
+La firma (v2, con timestamp) se calcula al reenviar, no al guardar.
+Laravel trata los webhooks de forma idempotente: reenviar un 'finished' ya procesado no duplica.
 """
 import asyncio
 import glob
-import json
 import logging
 import os
 
-import httpx
-
-from app.core.config import settings
-from app.utils.webhook_signing import signed_headers
+from app.utils import webhook_outbox as outbox
 
 logger = logging.getLogger(__name__)
 
@@ -33,60 +22,52 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
 # (directorio, url de destino). Un directorio se omite si su URL no está configurada.
 PENDING_DIRS = [
-    ("data/pending_webhooks", os.getenv("WEBHOOK_URL", "")),
-    ("data/pending_portal_webhooks", os.getenv("PORTAL_WEBHOOK_URL", "")),
+    (outbox.STATUS_DIR, os.getenv("WEBHOOK_URL", "")),
+    (outbox.PORTAL_DIR, os.getenv("PORTAL_WEBHOOK_URL", "")),
 ]
 
 RETRY_INTERVAL_SECONDS = int(os.getenv("WEBHOOK_RETRY_INTERVAL_SECONDS", "300"))
-TIMEOUT_SECONDS = 15
-
-
-def _headers(payload: dict):
-    """Serializa y firma (v2, con timestamp del momento del reenvío) y devuelve (body, headers)."""
-    body = json.dumps(payload).encode("utf-8")
-    return body, signed_headers(body, WEBHOOK_SECRET)
 
 
 async def retry_pending_webhooks_once() -> int:
-    """Intenta reenviar una vez todos los webhooks pendientes.
-
-    Retorna cuántos se entregaron y borraron correctamente.
-    """
+    """Intenta reenviar una vez todos los webhooks pendientes. Retorna cuántos se entregaron."""
     delivered = 0
 
     for directory, url in PENDING_DIRS:
         if not url or not os.path.isdir(directory):
             continue
 
+        recovered = outbox.recover_stale_claims(directory)
+        if recovered:
+            logger.warning("Webhook retry: %s envíos interrumpidos devueltos a pendientes en %s", recovered, directory)
+
         for filepath in glob.glob(os.path.join(directory, "*.json")):
+            claimed = outbox.claim(filepath)
+            if not claimed:
+                continue  # otro worker lo tomó
             try:
-                with open(filepath, "r", encoding="utf-8") as f:
-                    payload = json.load(f)
+                payload, _, _ = outbox.read(claimed)
             except Exception as e:  # noqa: BLE001
-                logger.warning("Webhook retry: no se pudo leer %s: %s", filepath, e)
+                outbox.dead_letter(claimed, f"archivo ilegible: {e}")
                 continue
 
-            body, headers = _headers(payload)
-            try:
-                async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
-                    resp = await client.post(url, content=body, headers=headers)
-                if resp.status_code < 300:
-                    os.remove(filepath)
-                    delivered += 1
-                    logger.info("Webhook retry: entregado %s (%s)", os.path.basename(filepath), resp.status_code)
-                else:
-                    logger.warning("Webhook retry: %s respondió %s, se conserva", os.path.basename(filepath), resp.status_code)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("Webhook retry: %s error %s, se conserva", os.path.basename(filepath), e)
+            status = await outbox.send(url, payload, WEBHOOK_SECRET)
+            name = os.path.basename(filepath)
+            if status is not None and status < 300:
+                os.remove(claimed)
+                delivered += 1
+                logger.info("Webhook retry: entregado %s (%s)", name, status)
+            elif status in outbox.PERMANENT_STATUS:
+                outbox.dead_letter(claimed, f"respuesta permanente {status}")
+            else:
+                if outbox.release(claimed, attempts_done=1):
+                    logger.warning("Webhook retry: %s respondió %s, se reintentará", name, status)
 
     return delivered
 
 
 async def start_webhook_retry_worker(interval_seconds: int = None) -> None:
-    """Loop infinito que reintenta webhooks pendientes cada N segundos.
-
-    Nunca lanza: ante cualquier error espera el intervalo y continúa.
-    """
+    """Loop infinito que reintenta webhooks pendientes cada N segundos. Nunca lanza."""
     interval = interval_seconds or RETRY_INTERVAL_SECONDS
     logger.info("Webhook retry worker iniciado (cada %ss)", interval)
     while True:

@@ -39,19 +39,17 @@ def cleanup_stale_temp_files(max_age_minutes: int = 60):
     else:
         print("✅ Limpieza completada: El disco ya estaba limpio (0 archivos borrados).")
 
-    # --- Limpieza de webhooks pendientes con más de 24 horas ---
-    webhook_dirs = ["data/pending_webhooks", "data/pending_portal_webhooks"]
-    for webhook_dir in webhook_dirs:
-        if os.path.exists(webhook_dir):
-            webhook_deleted_files = []
-            for filepath in glob.glob(os.path.join(webhook_dir, "*.json")):
-                try:
-                    if (current_time - os.path.getmtime(filepath)) > 86400:  # 24 horas
-                        os.remove(filepath)
-                        webhook_deleted_files.append(filepath)
-                except Exception as e:
-                    print(f"⚠️ No se pudo eliminar webhook pendiente {filepath}: {e}")
-
-            webhook_deleted = len(webhook_deleted_files)
-            if webhook_deleted > 0:
-                print(f"✅ Webhooks pendientes limpiados en {webhook_dir}: {webhook_deleted} archivos eliminados (>24h).")
+    # --- Webhooks pendientes (SGD-077): NUNCA se borran. El worker de reintento los manda a
+    # dead_webhooks al agotar intentos; esto solo cubre instancias sin worker activo.
+    from app.utils import webhook_outbox as outbox
+    for webhook_dir in (outbox.STATUS_DIR, outbox.PORTAL_DIR):
+        if not os.path.exists(webhook_dir):
+            continue
+        for filepath in glob.glob(os.path.join(webhook_dir, "*.json")):
+            try:
+                if (current_time - os.path.getmtime(filepath)) > 7 * 86400:
+                    claimed = outbox.claim(filepath)
+                    if claimed:
+                        outbox.dead_letter(claimed, "más de 7 días sin entregarse")
+            except Exception as e:
+                print(f"⚠️ No se pudo revisar el webhook pendiente {filepath}: {e}")

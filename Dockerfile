@@ -15,6 +15,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copiar solo el archivo de requerimientos para aprovechar el cache de Docker
 COPY requirements.txt .
+# SGD-079: todas las instalaciones respetan las versiones fijadas (builds reproducibles)
+COPY constraints.txt .
+ENV PIP_CONSTRAINT=/app/constraints.txt
 
 # Instalar las dependencias en el entorno virtual
 # Usamos --no-cache-dir para reducir el tamaño de la imagen
@@ -54,7 +57,7 @@ RUN pip install --no-cache-dir --retries 30 --prefer-binary \
 RUN pip install --no-cache-dir --retries 30 --prefer-binary \
     beautifulsoup4 striprtf nltk python-docx openpyxl tabulate
 RUN pip install --no-cache-dir --retries 30 --prefer-binary \
-    "sqlalchemy>=2.0.0,<2.1" b2sdk sentry-sdk httpx numpy pandas
+    "sqlalchemy>=2.0.0,<2.1" b2sdk httpx numpy pandas
 RUN pip install --no-cache-dir --retries 30 --prefer-binary \
     tenacity tqdm nest-asyncio
 

@@ -51,6 +51,9 @@ def retry(dry_run: bool = False):
             try:
                 with open(fp, "r", encoding="utf-8") as f:
                     payload = json.load(f)
+                # Formato outbox: {"_outbox": {...}, "payload": {...}} (archivos antiguos: payload crudo)
+                if isinstance(payload, dict) and "_outbox" in payload:
+                    payload = payload["payload"]
             except Exception as e:
                 log(f"⚠️ No se pudo leer {fp}: {e}")
                 continue

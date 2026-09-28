@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from .core.llm import create_llm
-from .services.b2_service import B2Service
 
 # Cargar variables de ambiente una sola vez
 load_dotenv()
@@ -98,10 +97,6 @@ async def startup_checkpointer():
 
 
 app.include_router(base_router)
-
-# Solo test ojo -> luego borrar
-b2_service = B2Service()
-bucket = b2_service.get_bucket()
 
 # Endpoint de información general
 @app.get("/info")
