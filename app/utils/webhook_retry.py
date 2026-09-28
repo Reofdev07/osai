@@ -18,8 +18,6 @@ un 'finished' ya procesado no duplica telemetría ni trazabilidad.
 """
 import asyncio
 import glob
-import hashlib
-import hmac
 import json
 import logging
 import os
@@ -27,6 +25,7 @@ import os
 import httpx
 
 from app.core.config import settings
+from app.utils.webhook_signing import signed_headers
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +42,9 @@ TIMEOUT_SECONDS = 15
 
 
 def _headers(payload: dict):
-    """Firma el cuerpo con HMAC-SHA256 y devuelve (body, headers)."""
+    """Serializa y firma (v2, con timestamp del momento del reenvío) y devuelve (body, headers)."""
     body = json.dumps(payload).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    if WEBHOOK_SECRET:
-        signature = hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
-        headers["X-Webhook-Signature"] = f"sha256={signature}"
-    return body, headers
+    return body, signed_headers(body, WEBHOOK_SECRET)
 
 
 async def retry_pending_webhooks_once() -> int:

@@ -3,11 +3,10 @@ import json
 import asyncio
 import os
 import time
-import hmac
-import hashlib
 from typing import Any, Dict, Optional
 
 from app.core.config import settings
+from app.utils.webhook_signing import signed_headers
 
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
@@ -63,23 +62,13 @@ async def notify_steps_to_laravel(
     # Serializar el cuerpo de la solicitud para la firma
     request_body = json.dumps(payload).encode('utf-8')
     
-    headers = {
-        "Content-Type": "application/json",
-    }
-
-    if WEBHOOK_SECRET:
-        signature = hmac.new(
-            WEBHOOK_SECRET.encode(),
-            request_body,
-            hashlib.sha256
-        ).hexdigest()
-        headers["X-Webhook-Signature"] = f"sha256={signature}"
-    
     MAX_RETRIES = 3
     async with httpx.AsyncClient(timeout=15) as client:
         for attempt in range(MAX_RETRIES):
             try:
                 print(f"Job [{job_id}]: Notificando a Laravel (Intento {attempt + 1}/{MAX_RETRIES}) -> Nodo: {node_name}, Estado: {status}")
+                # Firma por intento: el timestamp debe estar dentro de la ventana de Laravel.
+                headers = signed_headers(request_body, WEBHOOK_SECRET)
                 response = await client.post(webhook_url, content=request_body, headers=headers)
                 response.raise_for_status()  # Lanza error para respuestas 4xx/5xx
                 return True

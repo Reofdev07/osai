@@ -32,7 +32,10 @@ def _headers(payload: dict):
     body = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if WEBHOOK_SECRET:
-        sig = hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
+        # Firma v2 (SGD-146): timestamp del momento del envío; mismo esquema que app/utils/webhook_signing.py.
+        ts = str(int(time.time()))
+        sig = hmac.new(WEBHOOK_SECRET.encode(), ts.encode() + b"." + body, hashlib.sha256).hexdigest()
+        headers["X-Webhook-Timestamp"] = ts
         headers["X-Webhook-Signature"] = f"sha256={sig}"
     return body, headers
 

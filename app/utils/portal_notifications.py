@@ -2,11 +2,10 @@ import httpx
 import json
 import asyncio
 import os
-import hmac
-import hashlib
 from typing import Any, Dict, Optional
 
 from app.core.config import settings
+from app.utils.webhook_signing import signed_headers
 
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
@@ -31,21 +30,13 @@ async def notify_portal_steps(
         "step": step
     }
     request_body = json.dumps(payload).encode('utf-8')
-    headers = {"Content-Type": "application/json"}
-
-    if WEBHOOK_SECRET:
-        signature = hmac.new(
-            WEBHOOK_SECRET.encode(),
-            request_body,
-            hashlib.sha256
-        ).hexdigest()
-        headers["X-Webhook-Signature"] = f"sha256={signature}"
 
     MAX_RETRIES = 3
     async with httpx.AsyncClient(timeout=15) as client:
         for attempt in range(MAX_RETRIES):
             try:
                 print(f"Job [{job_id}]: Notificando resultado final a Laravel portal (Intento {attempt + 1}/{MAX_RETRIES})")
+                headers = signed_headers(request_body, WEBHOOK_SECRET)
                 response = await client.post(callback_url, content=request_body, headers=headers)
                 response.raise_for_status()
                 return True
