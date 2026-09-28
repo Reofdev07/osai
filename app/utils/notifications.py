@@ -49,5 +49,5 @@ async def notify_steps_to_laravel(
     print(f"Job [{job_id}]: Notificando a Laravel -> Nodo: {node_name}, Estado: {status}")
     delivered = await deliver(STATUS_DIR, settings.WEBHOOK_URL, payload, WEBHOOK_SECRET)
     if not delivered:
-        print(f"⚠️ Job [{job_id}]: webhook no entregado, queda en el outbox para reintento.")
+        print(f"⚠️ Job [{job_id}]: webhook no entregado (queda en pendientes para reintento o en dead_webhooks; ver log).")
     return delivered

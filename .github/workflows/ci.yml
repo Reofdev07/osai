@@ -1,0 +1,19 @@
+# SGD-133: CI de OSAI. Compila todo el código Python (errores de sintaxis e imports rotos a nivel de módulo).
+name: CI
+
+on:
+  push:
+    branches: [roraima.0.0.2]
+  pull_request:
+    branches: [roraima.0.0.2]
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compilar
+        run: python -m compileall -q app scripts

@@ -25,5 +25,5 @@ async def notify_portal_steps(
     payload = build_payload(job_id, node_name, status, data, step)
     delivered = await deliver(PORTAL_DIR, callback_url, payload, WEBHOOK_SECRET)
     if not delivered:
-        print(f"Job [{job_id}]: webhook del portal no entregado, queda en el outbox para reintento.")
+        print(f"Job [{job_id}]: webhook del portal no entregado (queda en pendientes para reintento o en dead_webhooks; ver log).")
     return delivered
