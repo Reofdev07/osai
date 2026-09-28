@@ -63,3 +63,6 @@ alembic/versions/*.pyc
 alembic/versions/*.pyo
 alembic/versions/__init__.py
 alembic.ini
+
+# SGD-034: bases vectoriales locales (no versionar)
+chroma_legal_db/
