@@ -1,3 +1,5 @@
+import re
+
 from app.schemas.graph_state import DocumentState
 
 def route_based_on_file_type(state: DocumentState) -> str:
@@ -39,3 +41,12 @@ def route_after_markitdown(state: DocumentState) -> str:
     
     print("--- Edge (MarkItDown): Extracción local exitosa. Pasando a Summarize. ---")
     return "has_text"
+
+
+def route_after_summarize(state: DocumentState) -> str:
+    """Sin texto legible (o solo separadores de página) no se analiza el contenido: la sensibilidad queda 'no evaluado'."""
+    text = re.sub(r"-+\s*Página\s*-+", "", state.get("raw_text") or "")
+    if not text.strip():
+        print("--- Edge (Summarize): texto vacío. No se evalúa el contenido. ---")
+        return "not_evaluated"
+    return "analyze"

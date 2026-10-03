@@ -42,6 +42,7 @@ async def process_document_graph(file_path: str, job_id: str):
         "priority_analysis": "Asignando prioridad legal",
         "analyze_compliance": "Verificando conformidad",
         "__end__": "Análisis finalizado",
+        "not_evaluated": "La IA no pudo leer el documento: revise y complete a mano",
         "unsupported": "Archivo no soportado"
     }
 

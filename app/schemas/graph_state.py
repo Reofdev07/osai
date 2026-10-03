@@ -32,6 +32,7 @@ class DocumentState(TypedDict):
     
     
     # Análisis IA
+    analysis_status: Optional[str]  # 'not_evaluated' si la IA no pudo leer el documento
     summary: Optional[str]          # Resumen generado
     subject: Optional[str]           # Asunto generado
     document_date: Optional[str]     # Fecha del documento

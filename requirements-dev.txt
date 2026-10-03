@@ -1,0 +1,6 @@
+# Solo desarrollo y CI: no entra a la imagen (el Dockerfile copia solo ./app).
+# Instalar con: pip install -c constraints.txt -r requirements-dev.txt
+pytest==8.3.3
+pymupdf
+openpyxl
+tiktoken
