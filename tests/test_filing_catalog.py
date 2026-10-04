@@ -15,8 +15,27 @@ def test_el_bloque_del_prompt_lista_ids_nombres_y_el_rol_de_la_dependencia():
     bloque = catalog_prompt_block(CATALOGO)
     assert "CATÁLOGO DE LA ENTIDAD" in bloque
     assert "- [100] Despacho" in bloque
-    assert "- [41] Recurso de reposición (código 02) — Recursos › Reposición — dependencias: 200" in bloque
+    assert "Recursos › Reposición:\n  - [41] Recurso de reposición (código 02) — dependencias: 200" in bloque
+    assert "Peticiones:\n  - [40] Petición (código 01) — dependencias: 100" in bloque
     assert "recibir y tramitar" in bloque
+
+
+def test_el_bloque_limpia_textos_y_agrupa_por_serie_y_subserie():
+    catalogo = {
+        "filing_type": "ENT",
+        "dependencies": [{"id": 1, "name": "Despacho\ndel   Alcalde"}],
+        "typologies": [
+            {"id": 5, "name": "Oficio\nexterno", "code": None, "series": "Comunicaciones", "subseries": None, "dependence_ids": []},
+            {"id": 6, "name": "Circular", "code": "07", "series": "Comunicaciones", "subseries": None, "dependence_ids": [1]},
+            {"id": 7, "name": "Suelta", "code": None, "series": None, "subseries": None, "dependence_ids": []},
+        ],
+    }
+    bloque = catalog_prompt_block(catalogo)
+    assert "- [1] Despacho del Alcalde" in bloque
+    assert bloque.count("Comunicaciones:") == 1
+    assert "Comunicaciones:\n  - [5] Oficio externo\n  - [6] Circular (código 07) — dependencias: 1" in bloque
+    assert "Sin serie:\n  - [7] Suelta" in bloque
+    assert "\n\n" not in bloque
 
 
 def test_sin_catalogo_no_hay_bloque():
@@ -62,6 +81,6 @@ def test_sugerencia_vacia_con_la_forma_del_contrato():
 
 
 def test_sensibilidad_en_vocabulario_trd():
-    assert [normalize_sensitivity_level(v) for v in ["publico", "Reservado", "public", "internal", "confidential", "restricted", "no_evaluado", "raro", None]] == [
-        "publico", "reservado", "publico", "clasificado", "confidencial", "reservado", "no_evaluado", "clasificado", "clasificado",
+    assert [normalize_sensitivity_level(v) for v in ["publico", "Reservado", "público", "CONFIDENCIAL ", "public", "internal", "confidential", "restricted", "no_evaluado", "raro", None]] == [
+        "publico", "reservado", "publico", "confidencial", "publico", "clasificado", "confidencial", "reservado", "no_evaluado", "clasificado", "clasificado",
     ]

@@ -9,8 +9,8 @@ from app.utils.webhook_outbox import STATUS_DIR, deliver
 
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
-# Versión del contrato OSAI -> Laravel (SGD-112): subirla si cambia la forma del payload.
-CONTRACT_VERSION = 1
+# Versión del contrato OSAI -> Laravel (SGD-112): 2 añade `suggestion` (catálogo de la entidad) y la sensibilidad TRD.
+CONTRACT_VERSION = 2
 
 # SGD-080: secuencia por job para que Laravel descarte pasos que lleguen fuera de orden.
 _sequences: dict[str, itertools.count] = defaultdict(lambda: itertools.count(1))

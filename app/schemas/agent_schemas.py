@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import Any, List, Optional, Dict
 
 class ExtractionSummary(BaseModel):
     resumen: str = Field(description="Resumen del documento en 3-4 oraciones en español.")
@@ -89,9 +89,9 @@ class SenderOutput(BaseModel):
     email: Optional[str] = Field(None, description="Correo del remitente, si aparece.")
 
 class SuggestionOutput(BaseModel):
-    typology_id: Optional[int] = Field(None, description="Id de la tipología del CATÁLOGO DE LA ENTIDAD; null si ninguna corresponde o no hay catálogo.")
+    typology_id: Optional[Any] = Field(None, description="Id de la tipología del CATÁLOGO DE LA ENTIDAD; null si ninguna corresponde o no hay catálogo.")
     typology_confidence: float = Field(0.0, description="Confianza de 0.0 a 1.0 en la tipología.")
-    dependence_id: Optional[int] = Field(None, description="Id de la dependencia del CATÁLOGO DE LA ENTIDAD; null si ninguna corresponde o no hay catálogo.")
+    dependence_id: Optional[Any] = Field(None, description="Id de la dependencia del CATÁLOGO DE LA ENTIDAD; null si ninguna corresponde o no hay catálogo.")
     dependence_confidence: float = Field(0.0, description="Confianza de 0.0 a 1.0 en la dependencia.")
     sender: SenderOutput = Field(default_factory=SenderOutput)
     sender_confidence: float = Field(0.0, description="Confianza de 0.0 a 1.0 en los datos del remitente.")

@@ -11,7 +11,7 @@ from app.schemas.graph_state import DocumentState
 from app.schemas.agent_schemas import MegaEnrichmentOutput, ExtractionSummary
 from app.utils.page_counter import count_pages
 from app.graphs.nodes.fallback_nodes import NOT_EVALUATED_SENSITIVITY
-from app.utils.filing_catalog import catalog_prompt_block, normalize_sensitivity_level, validate_suggestion
+from app.utils.filing_catalog import catalog_prompt_block, empty_suggestion, normalize_sensitivity_level, validate_suggestion
 from app.utils.token_counter import count_tokens, update_usage_metadata
 from app.core.config import settings
 from app.core.llm import create_llm, create_llm_emergency
@@ -409,4 +409,5 @@ async def unsupported_file_node(state: DocumentState) -> DocumentState:
         "error": "El tipo de archivo no está soportado actualmente.",
         "analysis_status": "not_evaluated",
         "sensitivity": dict(NOT_EVALUATED_SENSITIVITY),
+        "suggestion": empty_suggestion(),
     }

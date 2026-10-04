@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 # Cargar .env inicial
@@ -122,9 +122,7 @@ class Settings(BaseSettings):
             return {t.strip() for t in token_str.split(",") if t.strip()}
         return set()
 
-    class Config:
-        env_file = ".env"
-        extra = 'ignore'
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 @lru_cache()

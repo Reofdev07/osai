@@ -10,7 +10,6 @@ from pydantic import BaseModel, HttpUrl
 from ...utils.util import stream_download_file
 from ...agents.basic_response_agent import basic_response_agent
 from ...agents.chat_expert_agent import expert_chat_stream_generator
-from ...agents.typology_suggestion_agent import suggest_typology_agent
 from ...core.offline_queue import mark_job_completed, mark_job_failed, persist_pending_job
 from ...utils.filing_catalog import FilingCatalog
 
@@ -77,12 +76,3 @@ async def chat_stream(payload: dict):
     """
     full_payload = {**payload}
     return StreamingResponse(expert_chat_stream_generator(full_payload), media_type="text/plain")
-
-
-@doc_analyze_router.post("/suggest-typology")
-async def suggest_typology(payload: dict):
-    """
-    Endpoint que sugiere la tipología documental basada en el contenido del documento.
-    Recibe el resumen y contenido del documento y retorna la tipología sugerida.
-    """
-    return StreamingResponse(suggest_typology_agent(payload), media_type="text/plain")

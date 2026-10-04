@@ -1,4 +1,5 @@
 """Catálogo de la entidad que Laravel envía con cada documento (spec Recepción nueva §3). Sin dependencias pesadas: solo Pydantic."""
+import unicodedata
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
@@ -57,13 +58,19 @@ def catalog_prompt_block(catalog: Optional[dict]) -> str:
         "CATÁLOGO DE LA ENTIDAD (use SOLO estos ids; si ninguno corresponde, deje el id en null y la confianza en 0):",
         f"Dependencias (dependence_id = {role}):",
     ]
-    lines += [f"- [{dep['id']}] {dep['name']}" for dep in catalog.get("dependencies") or []]
-    lines.append("Tipologías documentales (typology_id):")
+    lines += [f"- [{dep['id']}] {_text(dep.get('name')) or ''}" for dep in catalog.get("dependencies") or []]
+    lines.append("Tipologías documentales (typology_id), agrupadas por serie › subserie:")
+    groups: dict = {}
     for typ in catalog.get("typologies") or []:
-        code = f" (código {typ['code']})" if typ.get("code") else ""
-        trd = " › ".join(part for part in (typ.get("series"), typ.get("subseries")) if part)
+        heading = " › ".join(part for part in (_text(typ.get("series")), _text(typ.get("subseries"))) if part) or "Sin serie"
+        code = _text(typ.get("code"))
         deps = ", ".join(str(dep) for dep in typ.get("dependence_ids") or [])
-        lines.append(f"- [{typ['id']}] {typ['name']}{code}" + (f" — {trd}" if trd else "") + (f" — dependencias: {deps}" if deps else ""))
+        groups.setdefault(heading, []).append(
+            f"  - [{typ['id']}] {_text(typ.get('name')) or ''}" + (f" (código {code})" if code else "") + (f" — dependencias: {deps}" if deps else "")
+        )
+    for heading, items in groups.items():
+        lines.append(f"{heading}:")
+        lines += items
     return "\n".join(lines)
 
 
@@ -128,7 +135,7 @@ def validate_suggestion(raw: Optional[dict], catalog: Optional[dict]) -> dict:
 
 def normalize_sensitivity_level(level) -> str:
     """Nivel de acceso en el vocabulario de la TRD; ante un valor desconocido no se presume «público» (Ley 1581)."""
-    value = str(level or "").strip().lower()
+    value = unicodedata.normalize("NFKD", str(level or "")).encode("ascii", "ignore").decode().strip().lower()
     if value in TRD_LEVELS or value == "no_evaluado":
         return value
     return LEGACY_LEVELS.get(value, "clasificado")

@@ -1,5 +1,6 @@
 """Qué devuelve OSAI cuando la IA no pudo leer el documento (spec 2026-10-03 §3.10). Sin dependencias pesadas."""
 from app.schemas.graph_state import DocumentState
+from app.utils.filing_catalog import empty_suggestion
 
 NOT_EVALUATED_MESSAGE = "La IA no pudo leer el documento: revise y complete a mano."
 
@@ -20,4 +21,5 @@ async def content_not_evaluated_node(state: DocumentState) -> dict:
         "classification": {"tipologia_documental": "", "confianza": 0},
         "tags": [],
         "entities": {},
+        "suggestion": empty_suggestion(),
     }
