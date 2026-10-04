@@ -75,10 +75,26 @@ class TagsOutput(BaseModel):
     tags: List[str] = Field(description="Lista de 5-7 etiquetas descriptivas en español.")
 
 class SensitivityOutput(BaseModel):
-    level: str = Field(description="'public' | 'internal' | 'confidential' | 'restricted'")
+    level: str = Field(description="Nivel de acceso según la TRD: 'publico' | 'clasificado' | 'reservado' | 'confidencial' (Ley 1712 de 2014 y Ley 1581 de 2012).")
     contains_sensitive_data: bool = Field(description="Determinar si contiene datos sensibles o identificables según Ley 1581 (salud, etnia, política, cédulas, RIF, direcciones, financieros)")
     detected_categories: List[str] = Field(description="Categorías detectadas: salud, biometrico, etnia, identificacion_personal, financiero, domicilio, etc.", default_factory=list)
     justification: str = Field(description="Explicación detallada de por qué se asignó este nivel de sensibilidad.")
+
+class SenderOutput(BaseModel):
+    name: Optional[str] = Field(None, description="Nombre de quien firma o remite el documento, tal como aparece.")
+    kind: Optional[str] = Field(None, description="natural | juridica | entidad")
+    identification: Optional[str] = Field(None, description="Cédula, NIT u otro número de identificación, si aparece.")
+    phone: Optional[str] = Field(None, description="Teléfono del remitente, si aparece.")
+    address: Optional[str] = Field(None, description="Dirección del remitente, si aparece.")
+    email: Optional[str] = Field(None, description="Correo del remitente, si aparece.")
+
+class SuggestionOutput(BaseModel):
+    typology_id: Optional[int] = Field(None, description="Id de la tipología del CATÁLOGO DE LA ENTIDAD; null si ninguna corresponde o no hay catálogo.")
+    typology_confidence: float = Field(0.0, description="Confianza de 0.0 a 1.0 en la tipología.")
+    dependence_id: Optional[int] = Field(None, description="Id de la dependencia del CATÁLOGO DE LA ENTIDAD; null si ninguna corresponde o no hay catálogo.")
+    dependence_confidence: float = Field(0.0, description="Confianza de 0.0 a 1.0 en la dependencia.")
+    sender: SenderOutput = Field(default_factory=SenderOutput)
+    sender_confidence: float = Field(0.0, description="Confianza de 0.0 a 1.0 en los datos del remitente.")
 
 class MegaEnrichmentOutput(BaseModel):
     intencion: IntentAnalysis
@@ -89,6 +105,7 @@ class MegaEnrichmentOutput(BaseModel):
     prioridad: PriorityOutput
     conformidad: ComplianceOutput
     sensibilidad: SensitivityOutput
+    sugerencia: SuggestionOutput = Field(default_factory=SuggestionOutput)
 
 class PqrsdValidationOutput(BaseModel):
     is_valid: bool = Field(description="Indica si la PQRSD es inteligible y tiene suficiente contexto mínimo (qué solicita y motivo).")
