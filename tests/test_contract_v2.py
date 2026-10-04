@@ -36,6 +36,20 @@ def test_un_id_mal_formado_no_hace_fallar_el_parseo_del_analisis():
 
     salida = SuggestionOutput(typology_id="no-es-un-id", dependence_id=[1], typology_confidence=0.9)
     assert salida.typology_id == "no-es-un-id"
+    assert salida.dependence_id is None
+    assert SuggestionOutput(typology_id={"a": 1}, dependence_id=True).model_dump()["typology_id"] is None
+    assert SuggestionOutput(typology_id=True).typology_id is None
+    assert SuggestionOutput(typology_id=40, dependence_id="100").dependence_id == "100"
     saneada = validate_suggestion(salida.model_dump(), {"typologies": [{"id": 40, "name": "X"}], "dependencies": []})
     assert saneada["typology_id"] is None
     assert saneada["typology_confidence"] == 0.0
+
+
+def test_el_esquema_json_de_los_ids_no_tiene_nodos_sin_type():
+    from app.schemas.agent_schemas import MegaEnrichmentOutput
+
+    esquema = MegaEnrichmentOutput.model_json_schema()
+    propiedades = esquema["$defs"]["SuggestionOutput"]["properties"]
+    for campo in ("typology_id", "dependence_id"):
+        ramas = propiedades[campo]["anyOf"]
+        assert ramas and all("type" in rama for rama in ramas), propiedades[campo]
