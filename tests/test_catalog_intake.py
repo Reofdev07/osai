@@ -68,13 +68,15 @@ def test_un_catalogo_fuera_de_limites_se_rechaza():
         {"dependencies": [{"id": i, "name": "D"} for i in range(1001)]},
         {"typologies": [dict(tipologia, id=i) for i in range(401)]},
         {"typologies": [dict(tipologia, dependence_ids=list(range(1001)))]},
-        {"typologies": [dict(tipologia, name="x" * 301)]},
-        {"typologies": [dict(tipologia, code="x" * 51)]},
-        {"dependencies": [{"id": 1, "name": "x" * 301}]},
+        {"typologies": [dict(tipologia, name="x" * 256)]},
+        {"typologies": [dict(tipologia, code="x" * 256)]},
+        {"dependencies": [{"id": 1, "name": "x" * 256}]},
     ):
         with pytest.raises(ValidationError):
             FilingCatalog.model_validate(malo)
     FilingCatalog.model_validate({"typologies": [dict(tipologia, id=i) for i in range(400)]})
+    # Lo que Laravel puede enviar legítimamente (VARCHAR 255) no se rechaza.
+    FilingCatalog.model_validate({"filing_type": "x" * 255, "typologies": [dict(tipologia, name="x" * 255, code="x" * 255, series="x" * 255, subseries="x" * 255)]})
 
 
 def test_la_ruta_responde_422_con_un_catalogo_fuera_de_limites():
