@@ -9,22 +9,23 @@ INTERNAL_STATE_FIELDS = ("catalog",)
 
 class CatalogDependency(BaseModel):
     id: int
-    name: str
+    name: str = Field(max_length=300)
 
 
 class CatalogTypology(BaseModel):
     id: int
-    name: str
-    code: Optional[str] = None
-    series: Optional[str] = None
-    subseries: Optional[str] = None
-    dependence_ids: List[int] = Field(default_factory=list)
+    name: str = Field(max_length=300)
+    code: Optional[str] = Field(default=None, max_length=50)
+    series: Optional[str] = Field(default=None, max_length=300)
+    subseries: Optional[str] = Field(default=None, max_length=300)
+    dependence_ids: List[int] = Field(default_factory=list, max_length=1000)
 
 
 class FilingCatalog(BaseModel):
-    filing_type: Optional[str] = None
-    dependencies: List[CatalogDependency] = Field(default_factory=list)
-    typologies: List[CatalogTypology] = Field(default_factory=list)
+    filing_type: Optional[str] = Field(default=None, max_length=50)
+    # Límites alineados con services.fastapi.catalog_max_typologies de Laravel.
+    dependencies: List[CatalogDependency] = Field(default_factory=list, max_length=1000)
+    typologies: List[CatalogTypology] = Field(default_factory=list, max_length=400)
 
 
 def without_internal_fields(state: dict) -> dict:
