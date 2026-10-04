@@ -1,5 +1,6 @@
 import uuid
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -10,8 +11,8 @@ from ...utils.util import stream_download_file
 from ...agents.basic_response_agent import basic_response_agent
 from ...agents.chat_expert_agent import expert_chat_stream_generator
 from ...agents.typology_suggestion_agent import suggest_typology_agent
-from ...core.database import get_db_connection
-from ...core.offline_queue import mark_job_completed, mark_job_failed
+from ...core.offline_queue import mark_job_completed, mark_job_failed, persist_pending_job
+from ...utils.filing_catalog import FilingCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,9 @@ doc_analyze_router = APIRouter(
 class FileUrlRequest(BaseModel):
     file_url: HttpUrl
     document_id: int
-    
+    # Catálogo real de la entidad (Laravel con contrato 2). Nulo en lotes antiguos: la IA no sugiere ids.
+    catalog: Optional[FilingCatalog] = None
+
 
 @doc_analyze_router.post("/analyze")
 async def analyze_url(
@@ -32,29 +35,22 @@ async def analyze_url(
     background_tasks: BackgroundTasks,
 ):
     job_id = str(uuid.uuid4())
+    catalog = request.catalog.model_dump() if request.catalog else None
 
     try:
-        from datetime import datetime
-        with get_db_connection() as conn:
-            conn.execute(
-                """INSERT OR REPLACE INTO pending_ai_jobs
-                   (id, document_id, file_url, status, created_at, retry_count)
-                   VALUES (?, ?, ?, 'processing', ?, 0)""",
-                (job_id, request.document_id, str(request.file_url), datetime.now().isoformat()),
-            )
-            conn.commit()
+        persist_pending_job(job_id, request.document_id, str(request.file_url), catalog)
     except Exception as e:
         logger.error(f"No se pudo persistir job {job_id} en la cola: {e}")
 
-    async def _run_and_track(file_url, jid):
+    async def _run_and_track(file_url, jid, job_catalog):
         try:
-            await stream_download_file(file_url, jid)
+            await stream_download_file(file_url, jid, job_catalog)
             await mark_job_completed(jid)
         except Exception as exc:
             await mark_job_failed(jid, str(exc)[:500])
             raise
 
-    background_tasks.add_task(_run_and_track, request.file_url, job_id)
+    background_tasks.add_task(_run_and_track, request.file_url, job_id, catalog)
 
     return {
         "message": "El procesamiento del documento ha comenzado.",

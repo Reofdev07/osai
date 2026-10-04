@@ -4,8 +4,10 @@ Procesa jobs pendientes cuando la conexión con el backend se recupera.
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime
+from typing import Optional
 from app.core.database import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -13,6 +15,18 @@ logger = logging.getLogger(__name__)
 MAX_CONCURRENT_JOBS = 3
 MAX_RETRIES = 5
 RETRY_DELAYS = [30, 60, 120, 300, 600]  # segundos
+
+
+def persist_pending_job(job_id: str, document_id: int, file_url: str, catalog: Optional[dict]) -> None:
+    """Guarda el job antes de procesarlo, con su catálogo, para que la cola offline lo reintente igual."""
+    with get_db_connection() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO pending_ai_jobs
+               (id, document_id, file_url, status, created_at, retry_count, catalog)
+               VALUES (?, ?, ?, 'processing', ?, 0, ?)""",
+            (job_id, document_id, file_url, datetime.now().isoformat(), json.dumps(catalog, ensure_ascii=False) if catalog else None),
+        )
+        conn.commit()
 
 
 async def mark_job_completed(job_id: str) -> None:
@@ -58,7 +72,7 @@ async def get_pending_jobs(limit: int = MAX_CONCURRENT_JOBS):
             conn.execute("BEGIN IMMEDIATE")
             conn.row_factory = None  # Usar tuplas
             cursor = conn.execute(
-                """SELECT id, document_id, file_url, retry_count
+                """SELECT id, document_id, file_url, retry_count, catalog
                    FROM pending_ai_jobs
                    WHERE status = 'pending' AND retry_count < ?
                    ORDER BY created_at ASC
@@ -102,13 +116,13 @@ async def process_pending_jobs():
             logger.info(f"Procesando {len(pending)} job(s) pendiente(s) de IA...")
 
             tasks = []
-            for job_id, document_id, file_url, retry_count in pending:
+            for job_id, document_id, file_url, retry_count, catalog_json in pending:
                 if retry_count == 0:
                     delay = 0
                 else:
                     delay_idx = min(retry_count - 1, len(RETRY_DELAYS) - 1)
                     delay = min(RETRY_DELAYS[delay_idx], 1800)
-                task = asyncio.create_task(_process_single_job(job_id, document_id, file_url, delay))
+                task = asyncio.create_task(_process_single_job(job_id, document_id, file_url, delay, catalog_json))
                 tasks.append(task)
 
             if tasks:
@@ -121,15 +135,15 @@ async def process_pending_jobs():
         await asyncio.sleep(10)
 
 
-async def _process_single_job(job_id: str, document_id: int, file_url: str, delay: int) -> None:
-    """Procesa un job individual con reintento."""
+async def _process_single_job(job_id: str, document_id: int, file_url: str, delay: int, catalog_json: Optional[str] = None) -> None:
+    """Procesa un job individual con reintento, con el mismo catálogo con que llegó."""
     from app.utils.util import stream_download_file
 
     logger.info(f"Procesando job {job_id} (doc {document_id}, delay {delay}s)...")
 
     try:
         await asyncio.sleep(delay)
-        await stream_download_file(file_url, job_id)
+        await stream_download_file(file_url, job_id, json.loads(catalog_json) if catalog_json else None)
         await mark_job_completed(job_id)
         logger.info(f"Job {job_id} completado exitosamente.")
     except Exception as e:

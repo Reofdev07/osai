@@ -13,18 +13,19 @@ from urllib.parse import urlparse
 from ..graphs.documents_analysis_graph import app_graph
 from .notifications import notify_steps_to_laravel
 from .url_security import is_safe_url
+from .filing_catalog import without_internal_fields
 
 
 # En tu archivo principal (donde llamas al grafo)
 
-async def process_document_graph(file_path: str, job_id: str):
+async def process_document_graph(file_path: str, job_id: str, catalog: dict | None = None):
     """
     Función que transmite el progreso a Laravel de forma centralizada
     y devuelve el estado final completo.
     """
     print(f"⚙️ Grafo [Job {job_id}]: Iniciando procesamiento...")
 
-    initial_state = { "job_id": job_id, "file_path": file_path }
+    initial_state = {"job_id": job_id, "file_path": file_path, "catalog": catalog}
 
     step_descriptions = {
         "__start__": "Iniciando análisis...",
@@ -84,7 +85,7 @@ async def process_document_graph(file_path: str, job_id: str):
             background_tasks.add(task)
             task.add_done_callback(background_tasks.discard)
 
-    final_state = accumulated_state
+    final_state = without_internal_fields(accumulated_state)
 
     # Truncar raw_text para no enviar megabytes de texto crudo por webhook
     MAX_RAW_TEXT = 50000
@@ -126,7 +127,7 @@ async def process_document_graph(file_path: str, job_id: str):
 MAX_CONCURRENT_DOCS = 5
 doc_processing_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOCS)
 
-async def stream_download_file(url: str, job_id: str):
+async def stream_download_file(url: str, job_id: str, catalog: dict | None = None):
     """
       Downloads a file, SAVING IT WITH ITS CLEANED ORIGINAL EXTENSION,
       and then processes it with the graph. Limited by Semaphore.
@@ -202,7 +203,7 @@ async def stream_download_file(url: str, job_id: str):
             print(f"📥 Job [{job_id}]: Descarga completada. El archivo está listo en {temp_file_path}")
 
             # --- PARTE 3: PROCESAMIENTO (sin cambios) ---
-            await process_document_graph(file_path=temp_file_path, job_id=job_id)
+            await process_document_graph(file_path=temp_file_path, job_id=job_id, catalog=catalog)
 
         except Exception as e:
             print(f"❌ ERROR en Job [{job_id}]: {e}")

@@ -59,6 +59,11 @@ def initialize_database():
             )
             """)
 
+            # 4. Catálogo de la entidad del job (spec Recepción nueva §3): la cola offline lo reutiliza al reintentar.
+            columnas = [fila[1] for fila in cursor.execute("PRAGMA table_info(pending_ai_jobs)")]
+            if "catalog" not in columnas:
+                cursor.execute("ALTER TABLE pending_ai_jobs ADD COLUMN catalog TEXT")
+
             conn.commit()
             print(f"Base de datos '{DB_FILE}' verificada y lista.")
             

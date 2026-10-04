@@ -15,6 +15,7 @@ class DocumentState(TypedDict):
     # Input inicial
     job_id: str
     file_path: str
+    catalog: Optional[Dict]         # Catálogo de la entidad enviado por Laravel (no vuelve en el webhook)
     
     # Procesamiento
     file_type: str                  # pdf_native, pdf_image, image, docx
@@ -44,6 +45,7 @@ class DocumentState(TypedDict):
     entities: Optional[Dict]        # Entidades extraídas
     compliance_analysis: Optional[Dict]  # Análisis de cumplimiento
     sensitivity: Optional[Dict]     # Análisis de sensibilidad y datos personales
+    suggestion: Optional[Dict]      # Tipología, dependencia y remitente sugeridos, validados contra el catálogo
     
     # Control de flujo
     tasks_requested: List[str]      # ['classify', 'summarize', 'entities', 'tags']
