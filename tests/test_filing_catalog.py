@@ -72,6 +72,12 @@ def test_remitente_limpio_tipo_valido_y_confianza_acotada():
     assert validate_suggestion({"sender": {"name": None}, "sender_confidence": 0.9}, None)["sender_confidence"] == 0.0
 
 
+def test_la_confianza_del_remitente_se_conserva_si_solo_hay_identificacion():
+    sugerencia = validate_suggestion({"sender": {"name": None, "identification": "900123456"}, "sender_confidence": 0.8}, None)
+    assert sugerencia["sender"]["identification"] == "900123456"
+    assert sugerencia["sender_confidence"] == 0.8
+
+
 def test_sugerencia_vacia_con_la_forma_del_contrato():
     assert empty_suggestion() == {
         "typology_id": None, "typology_confidence": 0.0, "dependence_id": None, "dependence_confidence": 0.0,

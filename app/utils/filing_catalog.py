@@ -128,7 +128,7 @@ def validate_suggestion(raw: Optional[dict], catalog: Optional[dict]) -> dict:
     suggestion["sender"] = {field: _text(sender.get(field)) for field in SENDER_FIELDS}
     kind = (suggestion["sender"]["kind"] or "").lower()
     suggestion["sender"]["kind"] = kind if kind in SENDER_KINDS else None
-    if suggestion["sender"]["name"]:
+    if suggestion["sender"]["name"] or suggestion["sender"]["identification"]:
         suggestion["sender_confidence"] = _confidence(raw.get("sender_confidence"))
     return suggestion
 
