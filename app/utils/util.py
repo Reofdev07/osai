@@ -16,6 +16,7 @@ from .url_security import is_safe_url
 from .filing_catalog import without_internal_fields
 from .redaction import redact_secrets
 from ..core.config import settings
+import time
 import traceback as _tb
 
 
@@ -29,6 +30,7 @@ async def process_document_graph(file_path: str, job_id: str, catalog: dict | No
     print(f"⚙️ Grafo [Job {job_id}]: Iniciando procesamiento...")
 
     initial_state = {"job_id": job_id, "file_path": file_path, "catalog": catalog}
+    started_at = time.monotonic()
 
     step_descriptions = {
         "__start__": "Iniciando análisis...",
@@ -89,6 +91,10 @@ async def process_document_graph(file_path: str, job_id: str, catalog: dict | No
             task.add_done_callback(background_tasks.discard)
 
     final_state = without_internal_fields(accumulated_state)
+    # Medición por documento (sin contenido): para comparar antes/después en staging.
+    print(f"Job [{job_id}]: Métricas documento: páginas={final_state.get('page_count')}, "
+          f"páginas_extraídas={accumulated_state.get('extraction_pages')}, método={final_state.get('extraction_method')}, "
+          f"segundos_totales={time.monotonic() - started_at:.1f}")
 
     # Truncar raw_text para no enviar megabytes de texto crudo por webhook
     MAX_RAW_TEXT = 50000
