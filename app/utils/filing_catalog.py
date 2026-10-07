@@ -139,3 +139,27 @@ def normalize_sensitivity_level(level) -> str:
     if value in TRD_LEVELS or value == "no_evaluado":
         return value
     return LEGACY_LEVELS.get(value, "clasificado")
+
+
+def apply_privacy_floor(sensitivity: dict, entities: dict | None) -> dict:
+    """Piso de privacidad (C-3): si el análisis detectó datos personales, el nivel nunca queda en «publico».
+
+    Señales: contains_sensitive_data, categorías detectadas o personas naturales extraídas. Se sube a «clasificado»
+    (datos personales, Ley 1581/1712). Desactivable con PRIVACY_FLOOR_ENABLED=false.
+    """
+    import os
+
+    if os.getenv("PRIVACY_FLOOR_ENABLED", "true").lower() not in ("1", "true", "yes", "on"):
+        return sensitivity
+    has_pii = bool(
+        sensitivity.get("contains_sensitive_data")
+        or sensitivity.get("detected_categories")
+        or ((entities or {}).get("personas_naturales") or [])
+    )
+    if has_pii and sensitivity.get("level") == "publico":
+        sensitivity = {
+            **sensitivity,
+            "level": "clasificado",
+            "justification": f"{sensitivity.get('justification') or ''} [Se elevó a «clasificado»: el documento contiene datos personales.]".strip(),
+        }
+    return sensitivity

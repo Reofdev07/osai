@@ -1,10 +1,9 @@
 import json
-from app.core.llm import create_llm
+from app.core.llm import text_chain_llms
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, trim_messages
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
-llm = create_llm()
 
 async def expert_chat_stream_generator(full_payload: dict):
     """
@@ -121,45 +120,60 @@ async def expert_chat_stream_generator(full_payload: dict):
         include_system=True, 
     )
 
-    # Creamos el agente de razonamiento (Versión compatible)
-    agent = create_react_agent(llm, tools=tools)
+    async def _stream_con(llm):
+        # Creamos el agente de razonamiento (Versión compatible)
+        agent = create_react_agent(llm, tools=tools)
 
-    # Ejecutamos el agente en modo stream
-    # En versiones modernas, astream con stream_mode="messages" devuelve tuplas (mensaje, metadata)
-    async for msg, metadata in agent.astream({"messages": messages_for_llm}, stream_mode="messages"):
+        # Ejecutamos el agente en modo stream
+        # En versiones modernas, astream con stream_mode="messages" devuelve tuplas (mensaje, metadata)
+        async for msg, metadata in agent.astream({"messages": messages_for_llm}, stream_mode="messages"):
         
-        # Solo emitimos el contenido si es un mensaje de la IA y tiene contenido textual
-        if isinstance(msg, AIMessage) or hasattr(msg, 'content'):
-            content = msg.content
+            # Solo emitimos el contenido si es un mensaje de la IA y tiene contenido textual
+            if isinstance(msg, AIMessage) or hasattr(msg, 'content'):
+                content = msg.content
             
-            # NORMALIZACIÓN: Si el contenido es una lista (fragmentos), extraemos el texto
-            if isinstance(content, list):
-                text_content = ""
-                for part in content:
-                    if isinstance(part, dict) and 'text' in part:
-                        text_content += part['text']
-                    elif isinstance(part, str):
-                        text_content += part
-                content = text_content
+                # NORMALIZACIÓN: Si el contenido es una lista (fragmentos), extraemos el texto
+                if isinstance(content, list):
+                    text_content = ""
+                    for part in content:
+                        if isinstance(part, dict) and 'text' in part:
+                            text_content += part['text']
+                        elif isinstance(part, str):
+                            text_content += part
+                    content = text_content
 
-            if content and isinstance(content, str) and not getattr(msg, 'tool_calls', None):
-                # Importante: Enviamos cada fragmento como una línea JSON válida
-                yield json.dumps({"type": "content", "content": content}, ensure_ascii=False) + "\n"
+                if content and isinstance(content, str) and not getattr(msg, 'tool_calls', None):
+                    # Importante: Enviamos cada fragmento como una línea JSON válida
+                    yield json.dumps({"type": "content", "content": content}, ensure_ascii=False) + "\n"
         
-        # Capturamos el uso de tokens si está disponible
-        if hasattr(msg, 'usage_metadata') and msg.usage_metadata:
-            usage = msg.usage_metadata
-            self_usage = {
-                "input_tokens": usage.get("input_tokens", 0),
-                "output_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0)
-            }
+            # Capturamos el uso de tokens si está disponible
+            if hasattr(msg, 'usage_metadata') and msg.usage_metadata:
+                usage = msg.usage_metadata
+                self_usage = {
+                    "input_tokens": usage.get("input_tokens", 0),
+                    "output_tokens": usage.get("output_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0)
+                }
 
-    # Envío final de usage (aproximado basado en el último nodo del agente)
-    # Nota: LangGraph a veces emite varios usage, aquí capturamos el último disponible
-    # Para simplicidad en este MVP, si self_usage no se capturó, enviamos ceros.
-    try:
-        if 'self_usage' in locals():
-            yield json.dumps({"type": "usage", "data": self_usage}, ensure_ascii=False) + "\n"
-    except Exception as e:
-        print(f"⚠️ No se pudo enviar usage en chat_expert_agent: {e}")
+        # Envío final de usage (aproximado basado en el último nodo del agente)
+        # Nota: LangGraph a veces emite varios usage, aquí capturamos el último disponible
+        # Para simplicidad en este MVP, si self_usage no se capturó, enviamos ceros.
+        try:
+            if 'self_usage' in locals():
+                yield json.dumps({"type": "usage", "data": self_usage}, ensure_ascii=False) + "\n"
+        except Exception as e:
+            print(f"⚠️ No se pudo enviar usage en chat_expert_agent: {e}")
+
+    # Cadena TEXT_CHAIN: si un proveedor falla ANTES de enviar texto, se prueba el siguiente.
+    modelos = text_chain_llms()
+    for indice, llm in enumerate(modelos):
+        emitido = False
+        try:
+            async for linea in _stream_con(llm):
+                emitido = True
+                yield linea
+            return
+        except Exception as e:
+            if emitido or indice == len(modelos) - 1:
+                raise
+            print(f"⚠️ Chat: proveedor {indice + 1}/{len(modelos)} falló ({type(e).__name__}); pasando al siguiente.")

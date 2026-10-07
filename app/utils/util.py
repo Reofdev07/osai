@@ -14,6 +14,9 @@ from ..graphs.documents_analysis_graph import app_graph
 from .notifications import notify_steps_to_laravel
 from .url_security import is_safe_url
 from .filing_catalog import without_internal_fields
+from .redaction import redact_secrets
+from ..core.config import settings
+import traceback as _tb
 
 
 # En tu archivo principal (donde llamas al grafo)
@@ -93,6 +96,16 @@ async def process_document_graph(file_path: str, job_id: str, catalog: dict | No
         final_state["raw_text"] = final_state["raw_text"][:MAX_RAW_TEXT] + "... [TRUNCADO]"
 
     # Evaluación del estado final para enviar alertas claras
+    if final_state.get("fatal_error"):
+        # Archivo rechazado por tipo/topes: Laravel lo marca fallido con este mensaje (mismo estado que los abortos previos al grafo).
+        await notify_steps_to_laravel(
+            job_id=job_id, node_name="graph_process", status="failed_terminal",
+            data={"error": final_state.get("error") or "El documento no se pudo procesar."},
+            step="Documento rechazado",
+        )
+        print(f"⛔ Job [{job_id}]: documento rechazado: {final_state.get('error')}")
+        return final_state
+
     final_status = "finished"
     final_message = "Proceso completado."
     
@@ -157,7 +170,7 @@ async def stream_download_file(url: str, job_id: str, catalog: dict | None = Non
                     raise ValueError("La ruta de la URL no contiene una extensión de archivo válida.")
             
             except ValueError as e:
-                print(f"❌ ERROR [Job {job_id}]: {e}. Abortando.")
+                print(f"❌ ERROR [Job {job_id}]: {redact_secrets(e)}. Abortando.")
                 await notify_steps_to_laravel(
                     job_id=job_id, node_name="download",
                     status="failed_terminal",
@@ -185,17 +198,17 @@ async def stream_download_file(url: str, job_id: str, catalog: dict | None = Non
             async with httpx.AsyncClient() as client:
                 async with client.stream("GET", str(url), follow_redirects=False, timeout=60.0) as response:
                     response.raise_for_status()
-                    MAX_BYTES = 100 * 1024 * 1024  # 100 MB de tope anti-DoS
+                    MAX_BYTES = settings.MAX_DOWNLOAD_MB * 1024 * 1024  # tope anti-DoS (MAX_DOWNLOAD_MB, 100 por defecto)
                     downloaded = 0
                     with open(temp_file_path, "wb") as f:
                         async for chunk in response.aiter_bytes():
                             downloaded += len(chunk)
                             if downloaded > MAX_BYTES:
-                                print(f"❌ ERROR [Job {job_id}]: Archivo excede el límite de 100 MB. Abortando.")
+                                print(f"❌ ERROR [Job {job_id}]: Archivo excede el límite de {settings.MAX_DOWNLOAD_MB} MB. Abortando.")
                                 await notify_steps_to_laravel(
                                     job_id=job_id, node_name="download",
                                     status="failed_terminal",
-                                    data={"error": "El archivo excede el límite de 100 MB."},
+                                    data={"error": f"El archivo excede el límite de {settings.MAX_DOWNLOAD_MB} MB."},
                                 )
                                 return
                             f.write(chunk)
@@ -206,13 +219,13 @@ async def stream_download_file(url: str, job_id: str, catalog: dict | None = Non
             await process_document_graph(file_path=temp_file_path, job_id=job_id, catalog=catalog)
 
         except Exception as e:
-            print(f"❌ ERROR en Job [{job_id}]: {e}")
-            import traceback
-            traceback.print_exc()
+            safe_error = redact_secrets(e)
+            print(f"❌ ERROR en Job [{job_id}]: {safe_error}")
+            print(redact_secrets("".join(_tb.format_exception(type(e), e, e.__traceback__))))
             await notify_steps_to_laravel(
                 job_id=job_id, node_name="download",
                 status="failed_terminal",
-                data={"error": str(e)},
+                data={"error": safe_error},
             )
         
         finally:

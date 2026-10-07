@@ -38,10 +38,19 @@ class Settings(BaseSettings):
     AI_SELECTOR: str = os.getenv("AI_SELECTOR", "GEMINI")
     AI_SELECTOR_EMERGENCY: str = os.getenv("AI_SELECTOR_EMERGENCY", "GEMINI")
     
-    # Vision Fallback (OpenRouter - The cheapest available globally)
     AI_SELECTOR_VISION: str = os.getenv("AI_SELECTOR_VISION", "GEMINI")
-    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
-    AI_MODEL_VISION_FALLBACK: str = os.getenv("AI_MODEL_VISION_FALLBACK", "qwen/qwen-vl-plus:free")
+
+    # Cadenas de proveedores (orden = prioridad). Un proveedor sin API key se omite con aviso.
+    # Texto (análisis, chat) y visión: deepseek -> gemini -> openai.
+    TEXT_CHAIN: str = os.getenv("TEXT_CHAIN", "deepseek,gemini,openai")
+    VISION_CHAIN: str = os.getenv("VISION_CHAIN", "deepseek,gemini,openai")
+    # Respaldo OCR clásico (Google Cloud Vision) tras agotar la cadena de visión. Apagado por defecto (sin OCR).
+    VISION_GOOGLE_OCR_FALLBACK: bool = os.getenv("VISION_GOOGLE_OCR_FALLBACK", "false").lower() in ("1", "true", "yes", "on")
+
+    # Topes de seguridad del archivo (anti-DoS). Excedidos -> el documento termina con error claro.
+    MAX_PDF_PAGES: int = int(os.getenv("MAX_PDF_PAGES", "60"))
+    MAX_IMAGE_PIXELS: int = int(os.getenv("MAX_IMAGE_PIXELS", "25000000"))
+    MAX_DOWNLOAD_MB: int = int(os.getenv("MAX_DOWNLOAD_MB", "100"))
 
     # Claves API IA
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
@@ -51,9 +60,14 @@ class Settings(BaseSettings):
 
     # Versiones de Modelos (Configurables en .env)
     MODEL_GEMINI: str = os.getenv("MODEL_GEMINI", "gemini-2.5-flash")
-    MODEL_DEEPSEEK: str = os.getenv("MODEL_DEEPSEEK", "deepseek-chat")
+    MODEL_DEEPSEEK: str = os.getenv("MODEL_DEEPSEEK", "deepseek-flash")
     MODEL_COHERE: str = os.getenv("MODEL_COHERE", "command-r-plus")
+    # OPENAI: confirmar el id exacto del modelo (p. ej. GPT-5.6 Luna) en la consola de OpenAI y fijarlo en MODEL_OPENAI.
     MODEL_OPENAI: str = os.getenv("MODEL_OPENAI", "gpt-4o")
+    # DeepSeek V4.1 Flash (multimodal) para la cadena de visión.
+    MODEL_DEEPSEEK_VISION: str = os.getenv("MODEL_DEEPSEEK_VISION", "deepseek-flash")
+    MODEL_OPENAI_VISION: str = os.getenv("MODEL_OPENAI_VISION", "") or os.getenv("MODEL_OPENAI", "gpt-4o")
+    MODEL_GEMINI_VISION: str = os.getenv("MODEL_GEMINI_VISION", "") or os.getenv("MODEL_GEMINI", "gemini-2.5-flash")
 
     # Mappings de Modelos dinámico
     @property

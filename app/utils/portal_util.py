@@ -7,6 +7,9 @@ from urllib.parse import urlparse
 from ..graphs.portal_pqrsd_graph import portal_graph
 from .portal_notifications import notify_portal_steps
 from .url_security import is_safe_url
+from .redaction import redact_secrets
+from ..core.config import settings
+import traceback as _tb
 
 
 async def portal_process_document_graph(file_path: str, job_id: str):
@@ -21,6 +24,14 @@ async def portal_process_document_graph(file_path: str, job_id: str):
             print(f"Job [{job_id}]: Progreso -> Nodo '{node_name}' completado.")
             step_output = dict(step_output) if step_output else {}
             accumulated_state.update(step_output)
+
+    if accumulated_state.get("fatal_error"):
+        await notify_portal_steps(
+            job_id=job_id, node_name="graph_process", status="failed_terminal",
+            data={"error": accumulated_state.get("error") or "El documento no se pudo procesar."},
+            step="Documento rechazado",
+        )
+        return accumulated_state
 
     final_status = "finished"
     final_message = "Análisis portal completado."
@@ -75,29 +86,29 @@ async def portal_stream_download_file(url: str, job_id: str):
             async with httpx.AsyncClient() as client:
                 async with client.stream("GET", str(url), follow_redirects=False, timeout=60.0) as response:
                     response.raise_for_status()
-                    MAX_BYTES = 100 * 1024 * 1024  # 100 MB de tope anti-DoS
+                    MAX_BYTES = settings.MAX_DOWNLOAD_MB * 1024 * 1024  # tope anti-DoS (MAX_DOWNLOAD_MB)
                     downloaded = 0
                     with open(temp_file_path, "wb") as f:
                         async for chunk in response.aiter_bytes():
                             downloaded += len(chunk)
                             if downloaded > MAX_BYTES:
-                                print(f"Job [{job_id}]: Archivo excede el límite de 100 MB. Abortando.")
+                                print(f"Job [{job_id}]: Archivo excede el límite de {settings.MAX_DOWNLOAD_MB} MB. Abortando.")
                                 await notify_portal_steps(
                                     job_id=job_id, node_name="download",
                                     status="failed_terminal",
-                                    data={"error": "El archivo excede el límite de 100 MB."},
+                                    data={"error": f"El archivo excede el límite de {settings.MAX_DOWNLOAD_MB} MB."},
                                 )
                                 return
                             f.write(chunk)
             await portal_process_document_graph(file_path=temp_file_path, job_id=job_id)
         except Exception as e:
-            print(f"Error en Job [{job_id}]: {e}")
-            import traceback
-            traceback.print_exc()
+            safe_error = redact_secrets(e)
+            print(f"Error en Job [{job_id}]: {safe_error}")
+            print(redact_secrets("".join(_tb.format_exception(type(e), e, e.__traceback__))))
             await notify_portal_steps(
                 job_id=job_id, node_name="download",
                 status="failed_terminal",
-                data={"error": str(e)},
+                data={"error": safe_error},
             )
         finally:
             if temp_file_path and os.path.exists(temp_file_path):

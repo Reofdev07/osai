@@ -1,12 +1,12 @@
 from langchain_core.messages import HumanMessage, SystemMessage
-from app.core.llm import create_llm
+from app.core.llm import create_llm_chain
 
 async def pqrsd_improver_agent(tipo_solicitud: str, subject: str, hechos: str, peticiones: str) -> dict:
     """
     Toma los campos crudos del ciudadano y los consolida en un solo documento
     formal, estructurado y listo para radicación legal.
     """
-    llm = create_llm()
+    llm = create_llm_chain()
     
     system_prompt = (
         "Eres un experto jurídico y administrativo en Colombia (Leyes 1755 y 1437). "
@@ -51,7 +51,7 @@ async def improve_single_field(field: str, text: str, context: str = "") -> dict
     Toma un solo campo (subject, hechos o peticiones) y mejora su redacción:
     gramática, ortografía, claridad y tono formal. No cambia el significado ni inventa datos.
     """
-    llm = create_llm()
+    llm = create_llm_chain()
 
     field_labels = {
         "subject": "Asunto",

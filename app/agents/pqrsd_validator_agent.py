@@ -1,5 +1,5 @@
 from langchain_core.messages import HumanMessage, SystemMessage
-from app.core.llm import create_llm
+from app.core.llm import create_llm_chain
 from app.schemas.agent_schemas import PqrsdValidationOutput
 
 
@@ -8,7 +8,7 @@ async def pqrsd_validator_agent(payload: dict) -> dict:
     Agent that analyzes a citizen's PQRSD payload (subject, description, location)
     and returns a structured PqrsdValidationOutput JSON.
     """
-    llm = create_llm()
+    llm = create_llm_chain()
     
     # We use LangChain's with_structured_output to force the LLM to output the exact JSON structure
     structured_llm = llm.with_structured_output(PqrsdValidationOutput, include_raw=True)

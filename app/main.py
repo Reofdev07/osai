@@ -10,7 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 # config.py o al inicio de main.py
 from dotenv import load_dotenv
 
-from .core.llm import create_llm
+from .utils.redaction import install_log_redaction
+
+install_log_redaction()
 
 # Cargar variables de ambiente una sola vez
 load_dotenv()
@@ -62,10 +64,8 @@ app.add_middleware(
 print(f"\n{'='*50}")
 print(f"🚀 Iniciando aplicación OSAI")
 print(f"🌍 Entorno: {settings.ENVIRONMENT}")
-print(f"🤖 LLM Principal: {settings.AI_MODEL} ({settings.AI_PROVIDER})")
-print(f"🆘 LLM Emergencia: {settings.AI_MODEL_EMERGENCY} ({settings.AI_PROVIDER_EMERGENCY})")
-print(f"👁️  LLM Visión (Primario): {settings.AI_MODEL_VISION} ({settings.AI_PROVIDER_VISION})")
-print(f"🛡️  LLM Visión (Respaldo): {settings.AI_MODEL_VISION_FALLBACK} (OpenRouter)")
+print(f"🤖 Cadena de texto: {settings.TEXT_CHAIN}")
+print(f"👁️  Cadena de visión: {settings.VISION_CHAIN}")
 print(f"{'='*50}\n")
 
 print("Verificando estado de la base de datos...")

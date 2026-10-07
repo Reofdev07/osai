@@ -147,6 +147,7 @@ async def _process_single_job(job_id: str, document_id: int, file_url: str, dela
         await mark_job_completed(job_id)
         logger.info(f"Job {job_id} completado exitosamente.")
     except Exception as e:
-        error_msg = str(e)[:500]
+        from app.utils.redaction import redact_secrets
+        error_msg = redact_secrets(e)[:500]
         await mark_job_failed(job_id, error_msg)
         logger.error(f"Job {job_id} falló: {error_msg}")

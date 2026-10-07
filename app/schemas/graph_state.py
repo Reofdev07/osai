@@ -26,7 +26,7 @@ class DocumentState(TypedDict):
     
     # Tracking de Consumo de Servicios
     usage_metadata: Annotated[Dict[str, int], reduce_usage] # Consumo real de la IA (input, output, total)
-    extraction_method: Annotated[Optional[str], last_value_reducer] # markitdown, gemini_vision, qwen_vision, google_vision_ocr
+    extraction_method: Annotated[Optional[str], last_value_reducer] # markitdown, <proveedor>_vision, google_vision_ocr
     extraction_pages: Annotated[int, operator.add] # Cantidad de páginas procesadas por el extractor
     
     step: str | None
@@ -50,4 +50,6 @@ class DocumentState(TypedDict):
     # Control de flujo
     tasks_requested: List[str]      # ['classify', 'summarize', 'entities', 'tags']
     current_step: str               # Paso actual
+    error: Optional[str]            # Error fatal del nodo (llega a Laravel en el webhook final)
+    fatal_error: Optional[bool]     # Archivo rechazado (tipo/topes): termina como failed_terminal
     errors: Annotated[List[str], operator.add] # Errores acumulados (concatenados en paralelo)

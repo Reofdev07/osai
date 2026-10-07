@@ -1,13 +1,11 @@
 import json
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.llm import create_llm
+from app.core.llm import create_llm_chain
 
 
 
 
-# Create instance of LLM
-llm = create_llm()
 
 
 async def basic_response_agent(context_payload: dict):
@@ -34,6 +32,7 @@ async def basic_response_agent(context_payload: dict):
         ]
 
         usage = None
+        llm = create_llm_chain()
         async for chunk in llm.astream(prompt):
             if chunk.usage_metadata:
                 usage = chunk.usage_metadata

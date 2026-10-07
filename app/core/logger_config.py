@@ -8,3 +8,6 @@ logging.basicConfig(
 
 # Crear el logger principal
 logger = logging.getLogger(__name__)
+
+from app.utils.redaction import install_log_redaction
+install_log_redaction()
