@@ -59,8 +59,8 @@ async def analyze_and_route_node(state: DocumentState) -> dict:
         print(f"--- Decisor: Detectado DOCUMENTO ({os.path.splitext(file_path)[1].lower()}). Ruta: markitdown_extract ---")
         return {"file_type": "office_document", "page_count": count_pages(file_path, mime_type)}
     except Exception as e:
-        print(f"Error en analyze_and_route: {e}")
-        return {"file_type": "unsupported"}
+        print(f"Error en analyze_and_route: {type(e).__name__}")
+        return {"file_type": "unsupported", "error": "No se pudo validar el archivo.", "fatal_error": True}
 
 # === NUEVOS NODOS: EXTRACCIÓN INTELIGENTE V2 ===
 

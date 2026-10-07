@@ -1,5 +1,6 @@
 """Fase 1: cadena de proveedores, topes de archivo, piso de privacidad, redacción de URLs y error al grafo."""
 import asyncio
+import os
 import zipfile
 
 import pytest
@@ -245,3 +246,86 @@ def test_descarga_se_corta_por_content_length_y_en_vuelo(monkeypatch):
     # Content-Length mentiroso: el tope en vuelo lo corta mientras lee el stream
     correr(lambda r: httpx.Response(200, content=b"x" * (2 * 1024 * 1024), headers={"content-length": "10"}))
     assert len(enviados) == 2 and enviados[-1]["status"] == "failed_terminal" and not llamado
+
+
+# --- fail-closed de file_guard ---
+@pytest.mark.parametrize("valor", ["", "abc", "0", "-5", " ", "1.5"])
+def test_config_invalida_o_cero_no_desactiva_el_tope(monkeypatch, valor):
+    from app.core.config import positive_int_env
+    monkeypatch.setenv("MAX_X", valor)
+    assert positive_int_env("MAX_X", 60) == 60
+    monkeypatch.setenv("MAX_X", "7")
+    assert positive_int_env("MAX_X", 60) == 7
+
+
+def test_geometria_invalida_se_rechaza():
+    for w, h in [(float("nan"), 10), (float("inf"), 10), (0, 10), (-5, 10), (10, 0)]:
+        assert file_guard.check_page_render(w, h)
+    assert file_guard.check_page_render(595, 842) is None
+    assert file_guard.check_pdf_pages(0) and file_guard.check_image_pixels(0, 10)
+
+
+def test_pdf_cifrado_o_corrupto_se_rechaza(tmp_path):
+    import fitz
+    c = tmp_path / "c.pdf"; c.write_bytes(b"%PDF-1.4\nbasura sin estructura")
+    assert file_guard.inspect_file(str(c))[1]
+    e = tmp_path / "e.pdf"
+    d = fitz.open(); d.new_page()
+    d.save(str(e), encryption=fitz.PDF_ENCRYPT_AES_256, user_pw="x", owner_pw="y")
+    assert "contraseña" in file_guard.inspect_file(str(e))[1]
+
+
+def test_excepcion_inesperada_rechaza(monkeypatch, tmp_path):
+    t = tmp_path / "a.txt"; t.write_text("hola")
+    monkeypatch.setattr(file_guard, "_head", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    assert file_guard.inspect_file(str(t))[0] == "unsupported" and file_guard.inspect_file(str(t))[1]
+
+
+def test_imagen_con_encabezado_mentiroso_se_rechaza(tmp_path):
+    from PIL import Image
+    p = tmp_path / "a.png"; Image.new("RGB", (50, 50), "red").save(p)
+    data = bytearray(p.read_bytes())
+    data[-30:-12] = b"\x00" * 18  # datos de imagen truncados/corruptos tras el encabezado
+    p.write_bytes(bytes(data))
+    assert file_guard.inspect_file(str(p))[1]
+
+
+def test_texto_con_nul_tardio_y_tipo_por_contenido(tmp_path):
+    t = tmp_path / "a.txt"; t.write_bytes(b"hola" * 5000 + b"\x00binario")
+    assert file_guard.inspect_file(str(t))[1]
+    f = tmp_path / "falso.json"; f.write_bytes(b"MZ\x90\x00\x03")  # ejecutable con extensión permitida
+    assert file_guard.inspect_file(str(f))[1]
+    o = tmp_path / "falso.xls"; o.write_bytes(b"texto plano")  # OLE sin firma
+    assert file_guard.inspect_file(str(o))[1]
+
+
+def test_zip_con_tamano_declarado_falso(tmp_path, monkeypatch):
+    z = tmp_path / "f.xlsx"
+    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as f:
+        f.writestr("[Content_Types].xml", "<x/>"); f.writestr("xl/h.xml", "0" * 3_000_000)
+    data = bytearray(z.read_bytes())
+    # falsea file_size (uncompressed) en el directorio central a un valor diminuto
+    idx = data.rindex(b"PK\x01\x02", 0, len(data))  # última entrada del directorio central
+    idx = data.index(b"xl/h.xml") - 46
+    data[idx + 24: idx + 28] = (10).to_bytes(4, "little")
+    z.write_bytes(bytes(data))
+    assert file_guard.inspect_file(str(z))[1]
+    monkeypatch.setattr(file_guard, "MAX_UNCOMPRESSED_MB", 1)
+    z2 = tmp_path / "g.xlsx"
+    with zipfile.ZipFile(z2, "w", zipfile.ZIP_STORED) as f:
+        f.writestr("[Content_Types].xml", "<x/>"); f.writestr("xl/h.xml", os.urandom(2 * 1024 * 1024))
+    assert "supera" in file_guard.inspect_file(str(z2))[1]
+
+
+def test_zip_anidado_cifrado_o_ruta_peligrosa(tmp_path):
+    for nombre in ("xl/embeddings/bomba.zip", "xl/../../etc/x.xml"):
+        z = tmp_path / "n.xlsx"
+        with zipfile.ZipFile(z, "w") as f:
+            f.writestr("[Content_Types].xml", "<x/>"); f.writestr("xl/h.xml", "<x/>"); f.writestr(nombre, "x")
+        assert file_guard.inspect_file(str(z))[1], nombre
+
+
+def test_error_inesperado_en_la_ruta_es_fatal(monkeypatch):
+    monkeypatch.setattr(nodes, "inspect_file", lambda p: (_ for _ in ()).throw(RuntimeError("x")))
+    r = asyncio.run(nodes.analyze_and_route_node({"file_path": "/x", "job_id": "t"}))
+    assert r["fatal_error"] and r["file_type"] == "unsupported"

@@ -6,6 +6,20 @@ from functools import lru_cache
 # Cargar .env inicial
 load_dotenv()
 
+def positive_int_env(name: str, default: int) -> int:
+    """Entero positivo del entorno. Vacío, no numérico, 0 o negativo NUNCA desactivan un tope: se usa el valor por defecto."""
+    raw = os.getenv(name, "")
+    try:
+        value = int(str(raw).strip())
+        if value > 0:
+            return value
+    except ValueError:
+        pass
+    if raw.strip():
+        print(f"⚠️ {name}='{raw}' no es un entero positivo; se usa el valor por defecto {default}.")
+    return default
+
+
 class Settings(BaseSettings):
     """
     Configuración Unificada.
@@ -48,9 +62,9 @@ class Settings(BaseSettings):
     VISION_GOOGLE_OCR_FALLBACK: bool = os.getenv("VISION_GOOGLE_OCR_FALLBACK", "false").lower() in ("1", "true", "yes", "on")
 
     # Topes de seguridad del archivo (anti-DoS). Excedidos -> el documento termina con error claro.
-    MAX_PDF_PAGES: int = int(os.getenv("MAX_PDF_PAGES", "60"))
-    MAX_IMAGE_PIXELS: int = int(os.getenv("MAX_IMAGE_PIXELS", "25000000"))
-    MAX_DOWNLOAD_MB: int = int(os.getenv("MAX_DOWNLOAD_MB", "100"))
+    MAX_PDF_PAGES: int = positive_int_env("MAX_PDF_PAGES", 60)
+    MAX_IMAGE_PIXELS: int = positive_int_env("MAX_IMAGE_PIXELS", 25000000)
+    MAX_DOWNLOAD_MB: int = positive_int_env("MAX_DOWNLOAD_MB", 100)
 
     # Claves API IA
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
