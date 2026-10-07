@@ -131,3 +131,117 @@ def test_redaccion_de_url_prefirmada():
     t = redact_secrets("Client error for url 'https://b.backblazeb2.com/f/a.pdf?X-Amz-Signature=abc&X-Amz-Credential=zz'")
     assert "abc" not in t and "zz" not in t and "backblazeb2.com/f/a.pdf" in t
     assert "tok123" not in redact_secrets("Authorization: Bearer tok123")
+
+
+# --- caminos para saltarse los topes (revisión de seguridad) ---
+def test_pagina_gigante_se_rechaza_antes_de_renderizar(tmp_path, monkeypatch):
+    import fitz
+    monkeypatch.setattr(settings, "MAX_IMAGE_PIXELS", 1_000_000)
+    p = tmp_path / "g.pdf"
+    d = fitz.open(); d.new_page(width=5000, height=5000); d.save(str(p))
+    assert "desproporcionado" in file_guard.inspect_file(str(p))[1]
+
+    class Pagina:  # el nodo de visión no renderiza si ni con el DPI mínimo cabe
+        rect = type("R", (), {"width": 5000, "height": 5000})()
+        def get_pixmap(self, **kw): raise AssertionError("no debe renderizar")
+    with pytest.raises(ValueError):
+        nodes._safe_dpi(Pagina())
+
+
+def test_dpi_se_reduce_sin_superar_tope(monkeypatch):
+    monkeypatch.setattr(settings, "MAX_IMAGE_PIXELS", 2_000_000)
+    class Pagina:
+        rect = type("R", (), {"width": 600, "height": 800})()
+    dpi = nodes._safe_dpi(Pagina())
+    assert dpi < 200 and (600 / 72) * (800 / 72) * dpi ** 2 <= 2_000_000
+
+
+def test_vision_revalida_paginas_sin_depender_del_router(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "MAX_PDF_PAGES", 1)
+    p = tmp_path / "a.pdf"; _pdf(str(p), 2)
+    with pytest.raises(ValueError):
+        asyncio.run(nodes._extract_pages_with_vision([("x", object())], str(p), "j"))
+
+
+def test_google_ocr_fallback_respeta_topes(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "MAX_PDF_PAGES", 1)
+    p = tmp_path / "a.pdf"; _pdf(str(p), 2)
+    r = asyncio.run(nodes.extract_with_google_vision_node({"file_path": str(p), "job_id": "j"}))
+    assert r["error"] and r["extraction_pages"] == 0
+
+
+def _tiff(path, frames, size=(10, 10)):
+    from PIL import Image
+    imgs = [Image.new("RGB", size) for _ in range(frames)]
+    imgs[0].save(path, save_all=True, append_images=imgs[1:])
+
+
+def test_tiff_multipagina_y_gif_animado(tmp_path, monkeypatch):
+    from PIL import Image
+    monkeypatch.setattr(settings, "MAX_PDF_PAGES", 3)
+    t = tmp_path / "m.tiff"; _tiff(str(t), 4)
+    assert "fotogramas" in file_guard.inspect_file(str(t))[1]
+    _tiff(str(t), 3)
+    assert file_guard.inspect_file(str(t)) == ("image", None)
+    monkeypatch.setattr(settings, "MAX_IMAGE_PIXELS", 150)  # 10x10 = 100 por fotograma; 3 fotogramas > 150*... suma
+    assert file_guard.inspect_file(str(t))[1] is None
+    monkeypatch.setattr(settings, "MAX_IMAGE_PIXELS", 99)
+    assert file_guard.inspect_file(str(t))[1]
+    g = tmp_path / "a.gif"
+    imgs = [Image.effect_noise((10, 10), 50 + i * 30).convert("P") for i in range(5)]
+    imgs[0].save(g, save_all=True, append_images=imgs[1:])
+    monkeypatch.setattr(settings, "MAX_IMAGE_PIXELS", 25_000_000)
+    assert "fotogramas" in file_guard.inspect_file(str(g))[1]
+
+
+def test_pillow_limita_decompression_bomb(tmp_path, monkeypatch):
+    from PIL import Image
+    monkeypatch.setattr(settings, "MAX_IMAGE_PIXELS", 5000)
+    p = tmp_path / "a.png"; Image.new("RGB", (100, 100)).save(p)
+    file_guard.check_image_file(str(p))
+    assert Image.MAX_IMAGE_PIXELS == 5000
+
+
+def test_zip_bomb_por_ratio_y_entradas(tmp_path, monkeypatch):
+    z = tmp_path / "b.xlsx"
+    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as f:
+        f.writestr("[Content_Types].xml", "<x/>")
+        f.writestr("xl/hoja.xml", "0" * 5_000_000)
+    assert "sospechosa" in file_guard.inspect_file(str(z))[1]
+    monkeypatch.setattr(file_guard, "MAX_ZIP_ENTRIES", 2)
+    z2 = tmp_path / "c.docx"
+    with zipfile.ZipFile(z2, "w") as f:
+        f.writestr("[Content_Types].xml", "<x/>"); f.writestr("word/a.xml", "<x/>"); f.writestr("word/b.xml", "<x/>")
+    assert "sospechosa" in file_guard.inspect_file(str(z2))[1]
+
+
+def test_zip_bomb_se_valida_antes_de_markitdown(tmp_path, monkeypatch):
+    z = tmp_path / "b.xlsx"
+    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as f:
+        f.writestr("[Content_Types].xml", "<x/>"); f.writestr("xl/hoja.xml", "0" * 5_000_000)
+    r = asyncio.run(nodes.analyze_and_route_node({"file_path": str(z), "job_id": "t"}))
+    assert r["fatal_error"] and r["file_type"] == "unsupported"
+
+
+def test_descarga_se_corta_por_content_length_y_en_vuelo(monkeypatch):
+    import httpx
+    from app.utils import util
+    monkeypatch.setattr(settings, "MAX_DOWNLOAD_MB", 1)
+    monkeypatch.setattr(util, "is_safe_url", lambda u: True)
+    enviados = []
+    async def notif(**kw): enviados.append(kw)
+    monkeypatch.setattr(util, "notify_steps_to_laravel", notif)
+    llamado = []
+    async def proceso(**kw): llamado.append(1)
+    monkeypatch.setattr(util, "process_document_graph", proceso)
+
+    def correr(handler):
+        real = httpx.AsyncClient
+        monkeypatch.setattr(util.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+        asyncio.run(util.stream_download_file("https://x.backblazeb2.com/a.pdf?sig=1", "j"))
+
+    correr(lambda r: httpx.Response(200, content=b"x", headers={"content-length": str(5 * 1024 * 1024)}))
+    assert enviados[-1]["status"] == "failed_terminal" and not llamado
+    # Content-Length mentiroso: el tope en vuelo lo corta mientras lee el stream
+    correr(lambda r: httpx.Response(200, content=b"x" * (2 * 1024 * 1024), headers={"content-length": "10"}))
+    assert len(enviados) == 2 and enviados[-1]["status"] == "failed_terminal" and not llamado

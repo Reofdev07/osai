@@ -14,7 +14,7 @@ from app.utils.page_counter import count_pages
 from app.graphs.nodes.fallback_nodes import NOT_EVALUATED_SENSITIVITY
 from app.utils.filing_catalog import apply_privacy_floor, catalog_prompt_block, empty_suggestion, normalize_sensitivity_level, validate_suggestion
 from app.utils.redaction import redact_secrets
-from app.utils.file_guard import check_image_pixels, inspect_file
+from app.utils.file_guard import check_image_file, check_page_render, check_pdf_pages, inspect_file
 from app.utils.token_counter import count_tokens, update_usage_metadata
 from app.core.config import settings
 from app.core.llm import create_llm, create_llm_emergency, vision_chain
@@ -137,12 +137,15 @@ async def _ocr_page(chain, image_url: str, job_id: str, label: str) -> tuple[str
 
 
 def _safe_dpi(page) -> int:
-    """Baja el DPI si el render superaría MAX_IMAGE_PIXELS (MediaBox gigante)."""
+    """DPI de render sin superar MAX_IMAGE_PIXELS; si ni con el mínimo cabe, se rechaza ANTES de renderizar."""
+    error = check_page_render(page.rect.width, page.rect.height)
+    if error:
+        raise ValueError(error)
     width_in, height_in = page.rect.width / 72, page.rect.height / 72
-    pixels = max(width_in * height_in, 0.0001) * VISION_DPI ** 2
-    if pixels <= settings.MAX_IMAGE_PIXELS:
+    area = max(width_in * height_in, 0.0001)
+    if area * VISION_DPI ** 2 <= settings.MAX_IMAGE_PIXELS:
         return VISION_DPI
-    return max(int((settings.MAX_IMAGE_PIXELS / (width_in * height_in)) ** 0.5), 36)
+    return max(int((settings.MAX_IMAGE_PIXELS / area) ** 0.5), 36)
 
 
 async def _extract_pages_with_vision(chain, file_path: str, job_id: str) -> tuple[str, int, set]:
@@ -155,6 +158,9 @@ async def _extract_pages_with_vision(chain, file_path: str, job_id: str) -> tupl
     if "pdf" in mime_type:
         with fitz.open(file_path) as doc:
             page_count = doc.page_count
+            error = check_pdf_pages(page_count)  # también aquí: el tope no depende de la ruta que llegó al nodo
+            if error:
+                raise ValueError(error)
             for i, page in enumerate(doc):
                 print(f"Job [{job_id}]: Vision procesando página {i+1}/{page_count}")
                 pix = page.get_pixmap(dpi=_safe_dpi(page))
@@ -163,9 +169,7 @@ async def _extract_pages_with_vision(chain, file_path: str, job_id: str) -> tupl
                 all_text.append(text)
                 used.add(name)
     elif "image" in mime_type:
-        from PIL import Image
-        with Image.open(file_path) as img:
-            error = check_image_pixels(*img.size)
+        error = check_image_file(file_path)
         if error:
             raise ValueError(error)
         with open(file_path, "rb") as f:
@@ -221,7 +225,13 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
         if "pdf" in mime_type:
              with fitz.open(file_path) as doc:
                 page_count = len(doc)
+                error = check_pdf_pages(page_count)
+                if error:
+                    raise ValueError(error)
                 for page in doc:
+                    error = check_page_render(page.rect.width, page.rect.height)
+                    if error:
+                        raise ValueError(error)
                     pix = page.get_pixmap()
                     image_bytes = pix.tobytes("png")
                     image = vision.Image(content=image_bytes)
@@ -229,6 +239,9 @@ async def extract_with_google_vision_node(state: DocumentState) -> DocumentState
                     if response.text_annotations:
                         all_text.append(response.text_annotations[0].description)
         else:
+            error = check_image_file(file_path)
+            if error:
+                raise ValueError(error)
             with open(file_path, "rb") as image_file:
                 content = image_file.read()
             image = vision.Image(content=content)

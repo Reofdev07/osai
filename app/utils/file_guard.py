@@ -32,9 +32,59 @@ def _head(path: str, n: int = 4096) -> bytes:
         return f.read(n)
 
 
+MAX_ZIP_ENTRIES = int(os.getenv("MAX_ZIP_ENTRIES", "10000"))
+MAX_ZIP_RATIO = int(os.getenv("MAX_ZIP_RATIO", "200"))  # descomprimido / comprimido
+MIN_RENDER_DPI = 36
+
+
+def _limit_pillow() -> None:
+    """Pillow avisa por encima de MAX_IMAGE_PIXELS y falla al doble: ninguna decodificación pasa de ahí."""
+    from PIL import Image
+
+    Image.MAX_IMAGE_PIXELS = settings.MAX_IMAGE_PIXELS
+
+
 def check_image_pixels(width: int, height: int) -> str | None:
     if width * height > settings.MAX_IMAGE_PIXELS:
         return f"La imagen es demasiado grande ({width}x{height}); el máximo permitido es {settings.MAX_IMAGE_PIXELS:,} píxeles."
+    return None
+
+
+def check_pdf_pages(pages: int) -> str | None:
+    if pages > settings.MAX_PDF_PAGES:
+        return f"El PDF tiene {pages} páginas; el máximo permitido es {settings.MAX_PDF_PAGES}."
+    return None
+
+
+def check_page_render(width_pt: float, height_pt: float) -> str | None:
+    """Rechaza la página (sin renderizar) si ni con el DPI mínimo cabría en MAX_IMAGE_PIXELS."""
+    pixels = (width_pt / 72) * (height_pt / 72) * MIN_RENDER_DPI ** 2
+    if pixels > settings.MAX_IMAGE_PIXELS:
+        return "Una página del PDF tiene un tamaño físico desproporcionado y no se puede procesar."
+    return None
+
+
+def check_image_file(path: str) -> str | None:
+    """Dimensiones por encabezado (sin cargar píxeles) de la imagen y de cada fotograma (TIFF multipágina, GIF animado)."""
+    from PIL import Image
+
+    _limit_pillow()
+    try:
+        with Image.open(path) as img:
+            frames = getattr(img, "n_frames", 1)
+            if frames > settings.MAX_PDF_PAGES:
+                return f"La imagen tiene {frames} fotogramas; el máximo permitido es {settings.MAX_PDF_PAGES}."
+            total = 0
+            for i in range(frames):
+                img.seek(i)
+                error = check_image_pixels(*img.size)
+                if error:
+                    return error
+                total += img.size[0] * img.size[1]
+            if total > settings.MAX_IMAGE_PIXELS * 4:
+                return "La suma de píxeles de todos los fotogramas de la imagen excede el máximo permitido."
+    except Exception:
+        return "La imagen está dañada o no se puede leer."
     return None
 
 
@@ -46,22 +96,20 @@ def _inspect_pdf(path: str):
             if doc.needs_pass:
                 return "pdf", "El PDF está protegido con contraseña."
             pages = doc.page_count
+            error = check_pdf_pages(pages)
+            if error:
+                return "pdf", error
+            for page in doc:  # solo geometría: no se renderiza nada
+                error = check_page_render(page.rect.width, page.rect.height)
+                if error:
+                    return "pdf", error
     except Exception:
         return "pdf", "El PDF está dañado o no se puede abrir."
-    if pages > settings.MAX_PDF_PAGES:
-        return "pdf", f"El PDF tiene {pages} páginas; el máximo permitido es {settings.MAX_PDF_PAGES}."
     return "pdf", None
 
 
 def _inspect_image(path: str):
-    from PIL import Image
-
-    try:
-        with Image.open(path) as img:  # solo lee el encabezado, no decodifica los píxeles
-            width, height = img.size
-    except Exception:
-        return "image", "La imagen está dañada o no se puede leer."
-    return "image", check_image_pixels(width, height)
+    return "image", check_image_file(path)
 
 
 def _inspect_ooxml(path: str, ext: str):
@@ -71,7 +119,11 @@ def _inspect_ooxml(path: str, ext: str):
             names = z.namelist()
             if "[Content_Types].xml" not in names or not any(n.startswith(root) for n in names):
                 return "office_document", MSG_TIPO
-            total = sum(i.file_size for i in z.infolist())
+            infos = z.infolist()
+            total = sum(i.file_size for i in infos)
+            packed = sum(i.compress_size for i in infos) or 1
+            if len(infos) > MAX_ZIP_ENTRIES or total / packed > MAX_ZIP_RATIO:
+                return "office_document", "El documento tiene una estructura comprimida sospechosa y no se procesa."
     except zipfile.BadZipFile:
         return "office_document", MSG_TIPO
     if total > MAX_UNCOMPRESSED_MB * 1024 * 1024:

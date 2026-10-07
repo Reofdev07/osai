@@ -198,6 +198,14 @@ async def stream_download_file(url: str, job_id: str, catalog: dict | None = Non
             async with httpx.AsyncClient() as client:
                 async with client.stream("GET", str(url), follow_redirects=False, timeout=60.0) as response:
                     response.raise_for_status()
+                    declared = response.headers.get("content-length")
+                    if declared and declared.isdigit() and int(declared) > settings.MAX_DOWNLOAD_MB * 1024 * 1024:
+                        # Tope por Content-Length ANTES de leer el cuerpo (el tope en vuelo sigue protegiendo si miente).
+                        await notify_steps_to_laravel(
+                            job_id=job_id, node_name="download", status="failed_terminal",
+                            data={"error": f"El archivo excede el límite de {settings.MAX_DOWNLOAD_MB} MB."},
+                        )
+                        return
                     MAX_BYTES = settings.MAX_DOWNLOAD_MB * 1024 * 1024  # tope anti-DoS (MAX_DOWNLOAD_MB, 100 por defecto)
                     downloaded = 0
                     with open(temp_file_path, "wb") as f:
