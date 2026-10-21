@@ -2,7 +2,7 @@ import uuid
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from pydantic import BaseModel, HttpUrl
@@ -10,6 +10,7 @@ from pydantic import BaseModel, HttpUrl
 from ...utils.util import stream_download_file
 from ...agents.basic_response_agent import basic_response_agent
 from ...agents.chat_expert_agent import expert_chat_stream_generator
+from ...agents.reference_text import REFERENCE_MAX_MB, ReferenceRejected, extract_reference_text
 from ...core.offline_queue import mark_job_completed, mark_job_failed, persist_pending_job
 from ...utils.filing_catalog import FilingCatalog
 
@@ -76,3 +77,20 @@ async def chat_stream(payload: dict):
     """
     full_payload = {**payload}
     return StreamingResponse(expert_chat_stream_generator(full_payload), media_type="text/plain")
+
+
+@doc_analyze_router.post("/assistant/reference-text")
+async def reference_text(file: UploadFile = File(...)):
+    """
+    Texto de un documento que el funcionario sube al chat solo para consultarlo. El archivo no se guarda.
+    422 con un mensaje para el funcionario si no sirve; 502 si la lectura falló.
+    """
+    data = await file.read(REFERENCE_MAX_MB * 1024 * 1024 + 1)
+    try:
+        return await extract_reference_text(data, file.filename or "")
+    except ReferenceRejected as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        # Solo el tipo de error: el mensaje podría traer contenido del documento.
+        logger.error(f"Documento de consulta del chat: no se pudo leer ({type(e).__name__}).")
+        raise HTTPException(status_code=502, detail="No se pudo leer el documento. Intente de nuevo.")
