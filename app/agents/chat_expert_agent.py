@@ -205,7 +205,7 @@ E. No te identifiques como «OSAI» ni como una oficina: eres el asistente del s
             }})
 
     # Cadena TEXT_CHAIN: si un proveedor falla ANTES de enviar texto, se prueba el siguiente.
-    modelos = text_chain_llms()
+    modelos = text_chain_llms(chat=True)
     for indice, llm in enumerate(modelos):
         emitido = False
         try:

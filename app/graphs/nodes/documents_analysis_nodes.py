@@ -21,7 +21,7 @@ from app.utils.token_counter import count_tokens, update_usage_metadata
 from app.utils import extract_cache
 from app.utils.offload import run_cpu
 from app.core.config import settings
-from app.core.llm import create_llm, create_llm_emergency, vision_chain
+from app.core.llm import create_llm, create_llm_emergency, structured_output, vision_chain
 
 # --- CONFIGURACIÓN GLOBAL PARA LOS NODOS ---
 CONTEXT_WINDOW_LIMIT = 300000 # ~75k tokens, suficiente para documentos largos
@@ -526,7 +526,7 @@ async def mega_analysis_node(state: DocumentState) -> DocumentState:
     catalog = state.get("catalog")
 
     llm = create_llm()
-    structured_llm = llm.with_structured_output(MegaEnrichmentOutput, method='json_schema', include_raw=True)
+    structured_llm = structured_output(llm, MegaEnrichmentOutput, method='json_schema', include_raw=True)
 
     full_prompt = f"""{MEGA_ANALYSIS_PROMPT}
 {SUGGESTION_PROMPT}

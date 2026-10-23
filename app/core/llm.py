@@ -34,12 +34,15 @@ _VISION_PROVIDERS = {"deepseek", "openai", "gemini", "claude"}
 
 def _model_name(name: str, vision: bool) -> str:
     if vision:
-        return {
+        vision_model = {
             "deepseek": settings.MODEL_DEEPSEEK_VISION,
             "openai": settings.MODEL_OPENAI_VISION,
             "gemini": settings.MODEL_GEMINI_VISION,
             "claude": settings.MODEL_CLAUDE_VISION,
         }[name]
+        # El compose pasa la variable vacía cuando no se configura: entonces se usa el modelo de texto del proveedor.
+        if (vision_model or "").strip():
+            return vision_model
     return {
         "deepseek": settings.MODEL_DEEPSEEK,
         "openai": settings.MODEL_OPENAI,
@@ -66,7 +69,7 @@ def chain_providers(chain: str, vision: bool = False) -> list[str]:
     return usable
 
 
-def _form_kwargs(provider: str, structured: bool) -> dict:
+def _form_kwargs(provider: str, structured: bool, chat: bool = False) -> dict:
     """
     Llamadas que piden un formulario fijo (with_structured_output): en DeepSeek se apaga el modo de pensamiento,
     que no admite la herramienta obligatoria. El chat y el texto libre no pasan por aquí.
@@ -75,14 +78,15 @@ def _form_kwargs(provider: str, structured: bool) -> dict:
     if provider == "anthropic":
         # Sin tope la librería pide el máximo de salida del modelo, que el SDK rechaza en llamadas sin streaming.
         kwargs["max_tokens"] = settings.CLAUDE_MAX_TOKENS
-        if structured and settings.CLAUDE_THINKING_FOR_FORMS.strip().lower() != "enabled":
+        setting = settings.CLAUDE_CHAT_THINKING if chat else settings.CLAUDE_THINKING
+        if setting.strip().lower() != "enabled":
             kwargs["thinking"] = {"type": "disabled"}
     if structured and provider == "deepseek" and settings.DEEPSEEK_THINKING_FOR_FORMS.strip().lower() != "enabled":
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     return kwargs
 
 
-def build_provider_llm(name: str, vision: bool = False, structured: bool = False):
+def build_provider_llm(name: str, vision: bool = False, structured: bool = False, chat: bool = False):
     provider, key_attr = _PROVIDERS[name]
     return init_chat_model(
         _model_name(name, vision),
@@ -91,7 +95,7 @@ def build_provider_llm(name: str, vision: bool = False, structured: bool = False
         max_retries=2,
         timeout=180,
         api_key=getattr(settings, key_attr),
-        **_form_kwargs(provider, structured),
+        **_form_kwargs(provider, structured, chat),
     )
 
 
@@ -120,12 +124,23 @@ def create_llm(provider: str = None, model: str = None, structured: bool = True)
     return text_chain_llms(structured=structured)[0]
 
 
-def text_chain_llms(structured: bool = False) -> list:
-    """Modelos de texto en orden de prioridad (solo proveedores con API key). structured: piden un formulario fijo."""
+def structured_output(llm, schema, method: str = "function_calling", **kwargs):
+    """
+    with_structured_output con el método que cada proveedor acepta. Claude rechaza los formularios grandes en modo
+    JSON estricto («The compiled grammar is too large»): con él se pide como herramienta. Los demás, sin cambios.
+    """
+    if type(llm).__name__ == "ChatAnthropic" and method == "json_schema":
+        method = "function_calling"
+    return llm.with_structured_output(schema, method=method, **kwargs)
+
+
+def text_chain_llms(structured: bool = False, chat: bool = False) -> list:
+    """Modelos de texto en orden de prioridad (solo proveedores con API key). structured: piden un formulario fijo;
+    chat: el chat del asistente."""
     names = chain_providers(settings.TEXT_CHAIN)
     if not names:
         raise RuntimeError("TEXT_CHAIN no tiene ningún proveedor con API key configurada.")
-    return [build_provider_llm(n, structured=structured) for n in names]
+    return [build_provider_llm(n, structured=structured, chat=chat) for n in names]
 
 
 def _log_failure(label: str, index: int, total: int, exc: Exception) -> None:

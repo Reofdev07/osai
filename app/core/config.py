@@ -137,8 +137,11 @@ class Settings(BaseSettings):
     MODEL_CLAUDE_VISION: str = os.getenv("MODEL_CLAUDE_VISION", "") or os.getenv("MODEL_CLAUDE", "claude-haiku-5-5")
     # Tope de tokens de salida por llamada (sin él la librería usa el máximo del modelo, que el SDK rechaza sin streaming).
     CLAUDE_MAX_TOKENS: int = positive_int_env("CLAUDE_MAX_TOKENS", 16000)
-    # Pensamiento de Claude en las llamadas con formulario fijo: apagado = más rápido y barato (el chat no cambia).
-    CLAUDE_THINKING_FOR_FORMS: str = os.getenv("CLAUDE_THINKING_FOR_FORMS", "disabled")
+    # Pensamiento de Claude en todas sus llamadas: apagado (por defecto) = más rápido y barato, y la respuesta llega
+    # como texto (encendido devuelve bloques de «pensamiento» que la nota de cierre no espera). «enabled» lo enciende.
+    CLAUDE_THINKING: str = os.getenv("CLAUDE_THINKING", "disabled")
+    # En el chat del asistente Claude piensa (adaptativo): sin pensar anuncia lo que va a consultar antes de responder.
+    CLAUDE_CHAT_THINKING: str = os.getenv("CLAUDE_CHAT_THINKING", "enabled")
     # OPENAI: confirmar el id exacto del modelo (p. ej. GPT-5.6 Luna) en la consola de OpenAI y fijarlo en MODEL_OPENAI.
     MODEL_OPENAI: str = os.getenv("MODEL_OPENAI", "gpt-4o")
     # DeepSeek V4.1 Flash (multimodal) para la cadena de visión.
