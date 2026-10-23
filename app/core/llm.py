@@ -1,6 +1,6 @@
 """Cadena de proveedores de LLM (texto y visión) configurable por entorno.
 
-TEXT_CHAIN / VISION_CHAIN = lista de proveedores en orden de prioridad (deepseek, gemini, openai; cohere solo texto).
+TEXT_CHAIN / VISION_CHAIN = lista de proveedores en orden de prioridad (claude, deepseek, gemini, openai; cohere solo texto).
 Un proveedor sin API key se omite con un aviso. Los fallos se registran sin datos del documento.
 """
 from langchain_core.rate_limiters import InMemoryRateLimiter
@@ -27,8 +27,9 @@ _PROVIDERS = {
     "openai": ("openai", "OPENAI_API_KEY"),
     "gemini": ("google_genai", "GOOGLE_API_KEY"),
     "cohere": ("cohere", "CO_API_KEY"),
+    "claude": ("anthropic", "ANTHROPIC_API_KEY"),
 }
-_VISION_PROVIDERS = {"deepseek", "openai", "gemini"}
+_VISION_PROVIDERS = {"deepseek", "openai", "gemini", "claude"}
 
 
 def _model_name(name: str, vision: bool) -> str:
@@ -37,12 +38,14 @@ def _model_name(name: str, vision: bool) -> str:
             "deepseek": settings.MODEL_DEEPSEEK_VISION,
             "openai": settings.MODEL_OPENAI_VISION,
             "gemini": settings.MODEL_GEMINI_VISION,
+            "claude": settings.MODEL_CLAUDE_VISION,
         }[name]
     return {
         "deepseek": settings.MODEL_DEEPSEEK,
         "openai": settings.MODEL_OPENAI,
         "gemini": settings.MODEL_GEMINI,
         "cohere": settings.MODEL_COHERE,
+        "claude": settings.MODEL_CLAUDE,
     }[name]
 
 
@@ -68,9 +71,15 @@ def _form_kwargs(provider: str, structured: bool) -> dict:
     Llamadas que piden un formulario fijo (with_structured_output): en DeepSeek se apaga el modo de pensamiento,
     que no admite la herramienta obligatoria. El chat y el texto libre no pasan por aquí.
     """
+    kwargs: dict = {}
+    if provider == "anthropic":
+        # Sin tope la librería pide el máximo de salida del modelo, que el SDK rechaza en llamadas sin streaming.
+        kwargs["max_tokens"] = settings.CLAUDE_MAX_TOKENS
+        if structured and settings.CLAUDE_THINKING_FOR_FORMS.strip().lower() != "enabled":
+            kwargs["thinking"] = {"type": "disabled"}
     if structured and provider == "deepseek" and settings.DEEPSEEK_THINKING_FOR_FORMS.strip().lower() != "enabled":
-        return {"extra_body": {"thinking": {"type": "disabled"}}}
-    return {}
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+    return kwargs
 
 
 def build_provider_llm(name: str, vision: bool = False, structured: bool = False):
@@ -96,7 +105,8 @@ def create_llm(provider: str = None, model: str = None, structured: bool = True)
         selected_provider = provider or settings.AI_PROVIDER
         selected_model = model or settings.AI_MODEL
         key_attr = {"google_genai": "GOOGLE_API_KEY", "deepseek": "DEEPSEEK_API_KEY",
-                    "cohere": "CO_API_KEY", "openai": "OPENAI_API_KEY"}.get(selected_provider)
+                    "cohere": "CO_API_KEY", "openai": "OPENAI_API_KEY",
+                    "anthropic": "ANTHROPIC_API_KEY"}.get(selected_provider)
         kwargs = {"api_key": getattr(settings, key_attr)} if key_attr else {}
         kwargs.update(_form_kwargs(selected_provider, structured))
         return init_chat_model(

@@ -90,7 +90,8 @@ class Settings(BaseSettings):
     AI_SELECTOR_VISION: str = os.getenv("AI_SELECTOR_VISION", "GEMINI")
 
     # Cadenas de proveedores (orden = prioridad). Un proveedor sin API key se omite con aviso.
-    # Texto (análisis, chat) y visión: deepseek -> gemini -> openai.
+    # Texto (análisis, chat) y visión: deepseek -> gemini -> openai (en el VPS: claude -> deepseek -> gemini).
+    # Nombres válidos: claude, deepseek, gemini, openai (y cohere solo para texto).
     TEXT_CHAIN: str = os.getenv("TEXT_CHAIN", "deepseek,gemini,openai")
     VISION_CHAIN: str = os.getenv("VISION_CHAIN", "deepseek,gemini,openai")
     # Respaldo OCR clásico (Google Cloud Vision) tras agotar la cadena de visión. Apagado por defecto (sin OCR).
@@ -121,6 +122,7 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     CO_API_KEY: str = os.getenv("CO_API_KEY", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
     # Versiones de Modelos (Configurables en .env)
     MODEL_GEMINI: str = os.getenv("MODEL_GEMINI", "gemini-2.5-flash")
@@ -130,6 +132,13 @@ class Settings(BaseSettings):
     # support this tool_choice», 2026-10-23). «disabled» (por defecto) o «enabled». El chat no se ve afectado.
     DEEPSEEK_THINKING_FOR_FORMS: str = os.getenv("DEEPSEEK_THINKING_FOR_FORMS", "disabled")
     MODEL_COHERE: str = os.getenv("MODEL_COHERE", "command-r-plus")
+    # Claude (API de Anthropic). Haiku 5.5: el más barato, suficiente para clasificar, extraer y leer imágenes.
+    MODEL_CLAUDE: str = os.getenv("MODEL_CLAUDE", "claude-haiku-5-5")
+    MODEL_CLAUDE_VISION: str = os.getenv("MODEL_CLAUDE_VISION", "") or os.getenv("MODEL_CLAUDE", "claude-haiku-5-5")
+    # Tope de tokens de salida por llamada (sin él la librería usa el máximo del modelo, que el SDK rechaza sin streaming).
+    CLAUDE_MAX_TOKENS: int = positive_int_env("CLAUDE_MAX_TOKENS", 16000)
+    # Pensamiento de Claude en las llamadas con formulario fijo: apagado = más rápido y barato (el chat no cambia).
+    CLAUDE_THINKING_FOR_FORMS: str = os.getenv("CLAUDE_THINKING_FOR_FORMS", "disabled")
     # OPENAI: confirmar el id exacto del modelo (p. ej. GPT-5.6 Luna) en la consola de OpenAI y fijarlo en MODEL_OPENAI.
     MODEL_OPENAI: str = os.getenv("MODEL_OPENAI", "gpt-4o")
     # DeepSeek V4.1 Flash (multimodal) para la cadena de visión.
@@ -144,14 +153,16 @@ class Settings(BaseSettings):
             "GEMINI": self.MODEL_GEMINI,
             "DEEPSEEK": self.MODEL_DEEPSEEK,
             "COHERE": self.MODEL_COHERE,
-            "OPENAI": self.MODEL_OPENAI
+            "OPENAI": self.MODEL_OPENAI,
+            "CLAUDE": self.MODEL_CLAUDE,
         }
 
     _PROVIDER_MAP: dict = {
         "GEMINI": "google_genai",
         "DEEPSEEK": "deepseek",
         "COHERE": "cohere",
-        "OPENAI": "openai"
+        "OPENAI": "openai",
+        "CLAUDE": "anthropic",
     }
 
     # Modelo Principal

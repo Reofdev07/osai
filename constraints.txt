@@ -6,6 +6,7 @@ aiosignal==1.4.0
 aiosqlite==0.22.1
 annotated-doc==0.0.5
 annotated-types==0.8.0
+anthropic==1.17.0
 anyio==4.15.1
 attrs==26.1.0
 b2sdk==2.13.0
@@ -19,6 +20,7 @@ cohere==5.21.1
 cryptography==50.0.1
 defusedxml==0.7.1
 distro==1.9.0
+docstring_parser==0.18.0
 et_xmlfile==2.0.0
 fastapi==0.141.1
 fastavro==1.12.2
@@ -55,6 +57,7 @@ joblib==1.6.0
 jsonpatch==1.33
 jsonpointer==3.1.1
 langchain==1.4.2
+langchain-anthropic==1.7.4
 langchain-classic==1.0.8
 langchain-cohere==0.6.0
 langchain-community==0.4.2
