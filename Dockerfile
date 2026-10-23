@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir --retries 30 --prefer-binary \
 RUN pip install --no-cache-dir --retries 30 --prefer-binary \
     langchain-community langchain-openai
 RUN pip install --no-cache-dir --retries 30 --prefer-binary \
-    langchain-google-genai langchain-google-community langchain-cohere langchain-deepseek
+    langchain-google-genai langchain-google-community langchain-cohere langchain-deepseek langchain-anthropic
 RUN pip install --no-cache-dir --retries 30 --prefer-binary \
     langgraph langgraph-checkpoint-sqlite langsmith aiosqlite
 RUN for i in $(seq 1 10); do \
