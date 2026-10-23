@@ -125,6 +125,10 @@ class Settings(BaseSettings):
     # Versiones de Modelos (Configurables en .env)
     MODEL_GEMINI: str = os.getenv("MODEL_GEMINI", "gemini-2.5-flash")
     MODEL_DEEPSEEK: str = os.getenv("MODEL_DEEPSEEK", "deepseek-flash")
+    # Modo de pensamiento de DeepSeek en las llamadas que piden un formulario fijo (análisis de documentos,
+    # validador del portal). Encendido, DeepSeek rechaza la herramienta obligatoria («Thinking mode does not
+    # support this tool_choice», 2026-10-23). «disabled» (por defecto) o «enabled». El chat no se ve afectado.
+    DEEPSEEK_THINKING_FOR_FORMS: str = os.getenv("DEEPSEEK_THINKING_FOR_FORMS", "disabled")
     MODEL_COHERE: str = os.getenv("MODEL_COHERE", "command-r-plus")
     # OPENAI: confirmar el id exacto del modelo (p. ej. GPT-5.6 Luna) en la consola de OpenAI y fijarlo en MODEL_OPENAI.
     MODEL_OPENAI: str = os.getenv("MODEL_OPENAI", "gpt-4o")

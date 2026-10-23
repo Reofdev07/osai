@@ -63,7 +63,17 @@ def chain_providers(chain: str, vision: bool = False) -> list[str]:
     return usable
 
 
-def build_provider_llm(name: str, vision: bool = False):
+def _form_kwargs(provider: str, structured: bool) -> dict:
+    """
+    Llamadas que piden un formulario fijo (with_structured_output): en DeepSeek se apaga el modo de pensamiento,
+    que no admite la herramienta obligatoria. El chat y el texto libre no pasan por aquí.
+    """
+    if structured and provider == "deepseek" and settings.DEEPSEEK_THINKING_FOR_FORMS.strip().lower() != "enabled":
+        return {"extra_body": {"thinking": {"type": "disabled"}}}
+    return {}
+
+
+def build_provider_llm(name: str, vision: bool = False, structured: bool = False):
     provider, key_attr = _PROVIDERS[name]
     return init_chat_model(
         _model_name(name, vision),
@@ -72,13 +82,15 @@ def build_provider_llm(name: str, vision: bool = False):
         max_retries=2,
         timeout=180,
         api_key=getattr(settings, key_attr),
+        **_form_kwargs(provider, structured),
     )
 
 
-def create_llm(provider: str = None, model: str = None):
+def create_llm(provider: str = None, model: str = None, structured: bool = True):
     """
     Crea un objeto LLM. Con argumentos usa ese proveedor/modelo; sin argumentos devuelve el
     principal de TEXT_CHAIN (compatible con bind_tools, astream y with_structured_output).
+    Lo usa el análisis de documentos (formulario fijo): structured=True por defecto.
     """
     if provider or model:
         selected_provider = provider or settings.AI_PROVIDER
@@ -86,6 +98,7 @@ def create_llm(provider: str = None, model: str = None):
         key_attr = {"google_genai": "GOOGLE_API_KEY", "deepseek": "DEEPSEEK_API_KEY",
                     "cohere": "CO_API_KEY", "openai": "OPENAI_API_KEY"}.get(selected_provider)
         kwargs = {"api_key": getattr(settings, key_attr)} if key_attr else {}
+        kwargs.update(_form_kwargs(selected_provider, structured))
         return init_chat_model(
             selected_model,
             model_provider=selected_provider,
@@ -94,15 +107,15 @@ def create_llm(provider: str = None, model: str = None):
             timeout=180,
             **kwargs
         )
-    return text_chain_llms()[0]
+    return text_chain_llms(structured=structured)[0]
 
 
-def text_chain_llms() -> list:
-    """Modelos de texto en orden de prioridad (solo proveedores con API key)."""
+def text_chain_llms(structured: bool = False) -> list:
+    """Modelos de texto en orden de prioridad (solo proveedores con API key). structured: piden un formulario fijo."""
     names = chain_providers(settings.TEXT_CHAIN)
     if not names:
         raise RuntimeError("TEXT_CHAIN no tiene ningún proveedor con API key configurada.")
-    return [build_provider_llm(n) for n in names]
+    return [build_provider_llm(n, structured=structured) for n in names]
 
 
 def _log_failure(label: str, index: int, total: int, exc: Exception) -> None:
@@ -162,9 +175,9 @@ class FallbackLLM:
         return _LoggedChain(self.models, self.label).astream(*args, **kwargs)
 
 
-def create_llm_chain() -> FallbackLLM:
-    """Cadena completa de texto (principal + respaldos)."""
-    return FallbackLLM(text_chain_llms())
+def create_llm_chain(structured: bool = False) -> FallbackLLM:
+    """Cadena completa de texto (principal + respaldos). structured=True si se pide un formulario fijo."""
+    return FallbackLLM(text_chain_llms(structured=structured))
 
 
 def create_llm_emergency():
@@ -172,7 +185,7 @@ def create_llm_emergency():
     Respaldo de texto: los proveedores de TEXT_CHAIN tras el principal. Se usa si el principal falla
     después de reintentos. Con un solo proveedor configurado, reintenta con ese mismo.
     """
-    models = text_chain_llms()
+    models = text_chain_llms(structured=True)  # solo lo usa el análisis de documentos (formulario fijo)
     return FallbackLLM(models[1:] or models, "emergencia")
 
 
