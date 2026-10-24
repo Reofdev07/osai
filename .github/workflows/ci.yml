@@ -28,5 +28,9 @@ jobs:
       # Las pruebas importan el código completo de app/: instalar lo de producción y lo de pruebas.
       - name: Dependencias de la app y de las pruebas
         run: pip install -c constraints.txt -r requirements.txt -r requirements-dev.txt
+      # En CI no hay .env: config.py exige estas dos variables al importarse. Valores de prueba, no se usan.
       - name: Pruebas
+        env:
+          WEBHOOK_URL: http://localhost/ci-webhook
+          GOOGLE_APPLICATION_CREDENTIALS: /dev/null
         run: python -m pytest -q
