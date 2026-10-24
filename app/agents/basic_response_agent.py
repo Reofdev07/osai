@@ -1,13 +1,11 @@
 import json
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.llm import create_llm
+from app.core.llm import create_llm_chain
 
 
 
 
-# Create instance of LLM
-llm = create_llm()
 
 
 async def basic_response_agent(context_payload: dict):
@@ -34,6 +32,7 @@ async def basic_response_agent(context_payload: dict):
         ]
 
         usage = None
+        llm = create_llm_chain()
         async for chunk in llm.astream(prompt):
             if chunk.usage_metadata:
                 usage = chunk.usage_metadata
@@ -50,6 +49,7 @@ async def basic_response_agent(context_payload: dict):
             yield json.dumps({"type": "usage", "data": usage_data}, ensure_ascii=False) + "\n"
 
     except Exception as e:
-        yield json.dumps({"type": "error", "content": str(e)}, ensure_ascii=False) + "\n"
+        print(f"❌ Error en basic_response_agent: {e}")
+        yield json.dumps({"type": "error", "content": "Error interno al generar la respuesta"}, ensure_ascii=False) + "\n"
 
     

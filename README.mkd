@@ -107,6 +107,21 @@ con más de 7 días de antigüedad, o si exceden 500 archivos o 100 MB por direc
 Además, al iniciar OSAI (`app/main.py:75`), `temp_cleaner.py` ya limpia archivos temporales
 y webhooks pendientes con más de 24 horas.
 
+### Worker — Reenvío de webhooks pendientes
+
+Desde `app/utils/webhook_retry.py`, OSAI ejecuta en background (al iniciar `app/main.py`)
+un worker asyncio que **reintenta cada 5 minutos** la entrega de los webhooks pendientes:
+
+- Lee `data/pending_webhooks/` (→ `WEBHOOK_URL`) y `data/pending_portal_webhooks/` (→ `PORTAL_WEBHOOK_URL`).
+- Re-firma cada payload con HMAC-SHA256 (cabecera `X-Webhook-Signature`).
+- Si Laravel responde 2xx → borra el archivo (entregado). Si falla → lo conserva para el siguiente intento.
+- Intervalo configurable con env `WEBHOOK_RETRY_INTERVAL_SECONDS` (default 300).
+
+Laravel trata los webhooks de forma idempotente, así que reenviar un estado final ya
+procesado no duplica datos.
+
+Uso manual (fuera del worker): `python3 scripts/retry_pending_webhooks.py [--dry-run]`.
+
 ## Contribuciones
 Si deseas contribuir al proyecto, puedes hacerlo de varias maneras:
 
