@@ -1,0 +1,36 @@
+# SGD-133: CI de OSAI. Compila todo el código Python (errores de sintaxis e imports rotos a nivel de módulo).
+name: CI
+
+on:
+  push:
+    branches: [roraima.0.0.2]
+  pull_request:
+    branches: [roraima.0.0.2]
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compilar
+        run: python -m compileall -q app scripts
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      # Las pruebas importan el código completo de app/: instalar lo de producción y lo de pruebas.
+      - name: Dependencias de la app y de las pruebas
+        run: pip install -c constraints.txt -r requirements.txt -r requirements-dev.txt
+      # En CI no hay .env: config.py exige estas dos variables al importarse. Valores de prueba, no se usan.
+      - name: Pruebas
+        env:
+          WEBHOOK_URL: http://localhost/ci-webhook
+          GOOGLE_APPLICATION_CREDENTIALS: /dev/null
+        run: python -m pytest -q

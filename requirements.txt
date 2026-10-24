@@ -15,22 +15,23 @@ langchain-google-genai>=2.0.0
 langchain-google-community>=2.0.0
 langchain-cohere>=0.3.0
 langchain-deepseek>=0.1.0
+langchain-anthropic>=1.7.0
 langgraph>=0.2.74
+langgraph-checkpoint-sqlite>=2.0.0
 langsmith>=0.1.0
+aiosqlite>=0.20.0
 
-# --- ECOSISTEMA LLAMA-INDEX ---
-llama-index-core>=0.12.18
-llama-index-llms-openai>=0.3.17
-llama-index-embeddings-openai>=0.3.1
-llama-index-readers-file>=0.4.5
-llama-index-readers-llama-parse>=0.4.0
-llama-parse>=0.6.1
+# --- PREPROCESAMIENTO INTELIGENTE ---
+markitdown>=0.1.0
 openai>=1.55.0
+tiktoken>=0.7.0
 
 # --- PROCESAMIENTO Y OCR ---
 google-cloud-vision>=3.7.0
 python-magic>=0.4.27
 puremagic>=1.20
+# file_guard revisa imágenes con Pillow (antes llegaba solo por pdfplumber)
+pillow>=12.0
 PyMuPDF>=1.24.0
 pypdf>=5.0.0
 beautifulsoup4>=4.12.0
@@ -42,8 +43,7 @@ tabulate>=0.9.0
 
 # --- ALMACENAMIENTO Y UTILIDADES ---
 b2sdk>=2.5.0
-sentry-sdk>=2.10.0
-sqlalchemy>=2.0.0
+sqlalchemy>=2.0.0,<2.1
 httpx>=0.27.0
 numpy>=1.26.0
 pandas>=2.1.0

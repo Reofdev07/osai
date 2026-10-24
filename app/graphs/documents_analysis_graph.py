@@ -1,106 +1,105 @@
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from app.schemas.graph_state import DocumentState
+import aiosqlite
+import os
+
+_checkpointer: AsyncSqliteSaver | None = None
+
+
+async def _prune_old_checkpoints(conn, max_age_days: int = 7):
+    """Elimina checkpoints con más de max_age_days días para evitar crecimiento indefinido de la DB."""
+    try:
+        cursor = await conn.execute(
+            "DELETE FROM checkpoints WHERE thread_ts < datetime('now', ?)",
+            (f"-{max_age_days} days",),
+        )
+        await conn.commit()
+        deleted = cursor.rowcount
+        if deleted:
+            print(f"🧹 Checkpointer: {deleted} checkpoints antiguos eliminados (>{max_age_days}d).")
+    except Exception as e:
+        print(f"⚠️ No se pudieron podar checkpoints (tabla puede no existir aún): {e}")
+
+
+async def init_checkpointer() -> AsyncSqliteSaver:
+    global _checkpointer
+    if _checkpointer is None:
+        os.makedirs("data", exist_ok=True)
+        conn = await aiosqlite.connect("data/graph_checkpoints.db")
+        _checkpointer = AsyncSqliteSaver(conn)
+        app_graph.checkpointer = _checkpointer
+        await _prune_old_checkpoints(conn)
+        print("Checkpointer AsyncSqliteSaver inicializado.")
+    return _checkpointer
+
 
 # --- 1. Importa todos los componentes necesarios ---
 
-# Importa todos los nodos que definimos en el archivo anterior.
-# ¡Asegúrate de que los nombres coincidan exactamente!
 from app.graphs.nodes.documents_analysis_nodes import (
     analyze_and_route_node,
-    extract_from_text_pdf_node,
-    count_pages_node,
-    adaptive_ocr_orchestrator_node,
-    extract_with_google_vision_node,
-    extract_with_llama_parse_node,
-    extract_office_document_node,
-    update_llama_parse_usage_node,
+    markitdown_extractor_node,
+    vision_extraction_node,
     unsupported_file_node,
     summarize_and_get_subject_node,
     mega_analysis_node
 )
 
-# Importa la función de enrutamiento del archivo de edges.
-from app.graphs.edges.documents_analysis_edges import route_based_on_file_type
+from app.graphs.nodes.fallback_nodes import content_not_evaluated_node
+from app.graphs.edges.documents_analysis_edges import (
+    route_based_on_file_type,
+    route_after_markitdown,
+    route_after_summarize,
+)
 
 # --- 2. Construcción del Grafo ---
-print("Construyendo el grafo de procesamiento de documentos...")
+print("Construyendo el grafo de procesamiento de documentos v2 (Smart Ingest)...")
 workflow = StateGraph(DocumentState)
 
 # --- Añadir todos los nodos al grafo ---
-# Nodos de entrada y orquestación
 workflow.add_node("analyze_and_route", analyze_and_route_node)
-workflow.add_node("count_pages", count_pages_node)
-workflow.add_node("orchestrate_ocr", adaptive_ocr_orchestrator_node)
-
-# Nodos de extracción de texto
-workflow.add_node("text_pdf", extract_from_text_pdf_node)
-workflow.add_node("google_vision", extract_with_google_vision_node)
-workflow.add_node("llama_parse", extract_with_llama_parse_node)
-workflow.add_node("extract_office", extract_office_document_node)
-workflow.add_node("update_usage_counter", update_llama_parse_usage_node)
-
-# Nodos de análisis de contenido
+workflow.add_node("markitdown_extract", markitdown_extractor_node)
+workflow.add_node("vision_extract", vision_extraction_node)
 workflow.add_node("summarize", summarize_and_get_subject_node)
 workflow.add_node("mega_analysis", mega_analysis_node)
-
-# Nodos finales
+workflow.add_node("not_evaluated", content_not_evaluated_node)
 workflow.add_node("unsupported", unsupported_file_node)
 
-# --- 3. Definir las conexiones (el flujo lógico) ---
-
-# Punto de entrada del grafo
+# --- 3. Definir las conexiones ---
 workflow.set_entry_point("analyze_and_route")
 
-# Decisión 1: ¿El archivo necesita OCR?
 workflow.add_conditional_edges(
     "analyze_and_route",
     route_based_on_file_type,
     {
-        "pdf_text": "text_pdf",
-        "pdf_scanned": "count_pages",
-        "image": "count_pages",
-        "office_document": "extract_office",
+        "pdf_text": "markitdown_extract",
+        "office_document": "markitdown_extract",
+        "pdf_scanned": "vision_extract",
+        "image": "vision_extract",
         "unsupported": "unsupported"
     }
 )
 
-# La ruta de OCR sigue un sub-flujo para decidir el proveedor
-workflow.add_edge("count_pages", "orchestrate_ocr")
-
-# Decisión 2: ¿Qué proveedor de OCR usar (decidido por el orquestador)?
-def route_after_orchestration(state: DocumentState):
-    provider = state.get("ocr_provider")
-    print(f"--- Edge (Orchestration): Dirigiendo a '{provider}' ---")
-    return provider
-
 workflow.add_conditional_edges(
-    "orchestrate_ocr",
-    route_after_orchestration,
+    "markitdown_extract",
+    route_after_markitdown,
     {
-        "llama_parse": "llama_parse",
-        "google_vision": "google_vision"
+        "has_text": "summarize",
+        "needs_vision": "vision_extract"
     }
 )
 
-# La ruta de LlamaParse tiene un paso extra: actualizar el contador
-workflow.add_edge("llama_parse", "update_usage_counter")
-
-# Unificar todas las rutas de extracción para que converjan en summarize
-workflow.add_edge("text_pdf", "summarize")
-workflow.add_edge("google_vision", "summarize")
-workflow.add_edge("update_usage_counter", "summarize")
-workflow.add_edge("extract_office", "summarize")
-
-# --- MEGA-ANALYSIS: Un solo nodo consolidado en vez de múltiples paralelos ---
-# El resumen nos sirve de contexto (vía TOON) para el mega-nodo.
-workflow.add_edge("summarize", "mega_analysis")
+workflow.add_edge("vision_extract", "summarize")
+workflow.add_conditional_edges(
+    "summarize",
+    route_after_summarize,
+    {"analyze": "mega_analysis", "not_evaluated": "not_evaluated"}
+)
 workflow.add_edge("mega_analysis", END)
+workflow.add_edge("not_evaluated", END)
+workflow.add_edge("unsupported", END)
 
-# Definir los puntos finales del grafo
-workflow.add_edge("unsupported", END)         # Final para archivos no soportados
-
-# --- 4. Compilar el grafo ---
-# Este es el objeto final que usarás para ejecutar tus trabajos.
+# --- 4. Compilar sin checkpointer (se inyecta en init_checkpointer) ---
 app_graph = workflow.compile()
 
-print("Grafo de procesamiento de documentos compilado y listo.")
+print("Grafo OSAI v2 compilado. Checkpointer se inyecta en startup.")

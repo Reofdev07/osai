@@ -29,6 +29,11 @@ async def validate_pqrsd(payload: PqrsdInputPayload):
     result = await pqrsd_validator_agent(dict_payload)
     return result
 
+class PqrsdImproveFieldPayload(BaseModel):
+    field: str
+    text: str
+    context: Optional[str] = ""
+
 @pqrsd_router.post("/improve")
 async def improve_pqrsd_text(payload: PqrsdImprovePayload):
     """
@@ -36,5 +41,14 @@ async def improve_pqrsd_text(payload: PqrsdImprovePayload):
     """
     from app.agents.pqrsd_improver_agent import pqrsd_improver_agent
     result = await pqrsd_improver_agent(payload.tipo_solicitud, payload.subject, payload.hechos, payload.peticiones)
+    return result
+
+@pqrsd_router.post("/improve-field")
+async def improve_pqrsd_field(payload: PqrsdImproveFieldPayload):
+    """
+    Recibe un solo campo de texto y devuelve la versión mejorada.
+    """
+    from app.agents.pqrsd_improver_agent import improve_single_field
+    result = await improve_single_field(payload.field, payload.text, payload.context)
     return result
 
