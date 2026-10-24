@@ -1,4 +1,5 @@
 
+import asyncio
 import os
 import logging
 
@@ -9,8 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 # config.py o al inicio de main.py
 from dotenv import load_dotenv
 
-from .core.llm import create_llm
-from .services.b2_service import B2Service
+from .utils.redaction import install_log_redaction
+
+install_log_redaction()
 
 # Cargar variables de ambiente una sola vez
 load_dotenv()
@@ -62,8 +64,8 @@ app.add_middleware(
 print(f"\n{'='*50}")
 print(f"🚀 Iniciando aplicación OSAI")
 print(f"🌍 Entorno: {settings.ENVIRONMENT}")
-print(f"🤖 LLM Principal: {settings.AI_MODEL} ({settings.AI_PROVIDER})")
-print(f"🆘 LLM Emergencia: {settings.AI_MODEL_EMERGENCY} ({settings.AI_PROVIDER_EMERGENCY})")
+print(f"🤖 Cadena de texto: {settings.TEXT_CHAIN}")
+print(f"👁️  Cadena de visión: {settings.VISION_CHAIN}")
 print(f"{'='*50}\n")
 
 print("Verificando estado de la base de datos...")
@@ -74,20 +76,29 @@ cleanup_stale_temp_files(max_age_minutes=60) # Limpieza activa de basura en cada
 
 print("✅ Inicialización completada. La aplicación está lista.\n")
 
-app.include_router(base_router)
 
-# Solo test ojo -> luego borrar
-b2_service = B2Service()
-bucket = b2_service.get_bucket()
+@app.on_event("startup")
+async def startup_checkpointer():
+    from app.graphs.documents_analysis_graph import init_checkpointer
+    await init_checkpointer()
+    print("Checkpointer LangGraph listo.")
+
+    # Iniciar worker de cola offline para jobs de IA pendientes
+    from app.core.offline_queue import process_pending_jobs
+    if settings.BACKGROUND_WORKER:
+        asyncio.create_task(process_pending_jobs())
+        print("Worker de cola offline iniciado.")
+
+    # Iniciar worker de reenvío de webhooks pendientes a Laravel
+    from app.utils.webhook_retry import start_webhook_retry_worker
+    if settings.BACKGROUND_WORKER:
+        asyncio.create_task(start_webhook_retry_worker())
+        print("Worker de reenvío de webhooks pendientes iniciado.")
+
+
+app.include_router(base_router)
 
 # Endpoint de información general
 @app.get("/info")
 def read_root():
-    return {
-        "message": f" Hello, World! the app: {settings.APP_NAME} is Running in {settings.ENVIRONMENT} mode. bucket: {bucket.name}"} 
-
-@app.get("/test")
-def test_llm():
-    llm = create_llm()
-    response = llm.invoke("¿Cuál es el nombre de tu modelo?")
-    return {"response": response}
+    return {"status": "ok", "app": settings.APP_NAME}

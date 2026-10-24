@@ -15,6 +15,7 @@ class DocumentState(TypedDict):
     # Input inicial
     job_id: str
     file_path: str
+    catalog: Optional[Dict]         # Catálogo de la entidad enviado por Laravel (no vuelve en el webhook)
     
     # Procesamiento
     file_type: str                  # pdf_native, pdf_image, image, docx
@@ -25,16 +26,14 @@ class DocumentState(TypedDict):
     
     # Tracking de Consumo de Servicios
     usage_metadata: Annotated[Dict[str, int], reduce_usage] # Consumo real de la IA (input, output, total)
-    extraction_method: Annotated[Optional[str], last_value_reducer] # native_pdf, llama_parse, google_vision
-    extraction_pages: Annotated[int, operator.add] # Cantidad de páginas procesadas por el OCR/Parser
+    extraction_method: Annotated[Optional[str], last_value_reducer] # markitdown, <proveedor>_vision, google_vision_ocr
+    extraction_pages: Annotated[int, operator.add] # Cantidad de páginas procesadas por el extractor
     
     step: str | None
     
-    ocr_provider: Optional[str] | None # google_vision, llama_parse
-    ocr_provider_decision: Optional[str] | None # llama_parse, google_vision
-    
     
     # Análisis IA
+    analysis_status: Optional[str]  # 'not_evaluated' si la IA no pudo leer el documento
     summary: Optional[str]          # Resumen generado
     subject: Optional[str]           # Asunto generado
     document_date: Optional[str]     # Fecha del documento
@@ -46,8 +45,11 @@ class DocumentState(TypedDict):
     entities: Optional[Dict]        # Entidades extraídas
     compliance_analysis: Optional[Dict]  # Análisis de cumplimiento
     sensitivity: Optional[Dict]     # Análisis de sensibilidad y datos personales
+    suggestion: Optional[Dict]      # Tipología, dependencia y remitente sugeridos, validados contra el catálogo
     
     # Control de flujo
     tasks_requested: List[str]      # ['classify', 'summarize', 'entities', 'tags']
     current_step: str               # Paso actual
+    error: Optional[str]            # Error fatal del nodo (llega a Laravel en el webhook final)
+    fatal_error: Optional[bool]     # Archivo rechazado (tipo/topes): termina como failed_terminal
     errors: Annotated[List[str], operator.add] # Errores acumulados (concatenados en paralelo)
