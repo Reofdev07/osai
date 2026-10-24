@@ -30,6 +30,8 @@ tiktoken>=0.7.0
 google-cloud-vision>=3.7.0
 python-magic>=0.4.27
 puremagic>=1.20
+# file_guard revisa imágenes con Pillow (antes llegaba solo por pdfplumber)
+pillow>=12.0
 PyMuPDF>=1.24.0
 pypdf>=5.0.0
 beautifulsoup4>=4.12.0

@@ -25,7 +25,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Dependencias mínimas de las pruebas
-        run: pip install -c constraints.txt -r requirements-dev.txt
+      # Las pruebas importan el código completo de app/: instalar lo de producción y lo de pruebas.
+      - name: Dependencias de la app y de las pruebas
+        run: pip install -c constraints.txt -r requirements.txt -r requirements-dev.txt
       - name: Pruebas
         run: python -m pytest -q
